@@ -12,6 +12,7 @@
   #include "Display.h"
 #endif
 #include "utils.h"
+#include "logger.h"
 #include <Update.h>
 
 extern Buffer buffer;

@@ -7,10 +7,10 @@ bool SDInterface::initSD() {
     #ifdef KIT
       pinMode(SD_DET, INPUT);
       if (digitalRead(SD_DET) == LOW) {
-        Serial.println(F("SD Card Detect Pin Detected"));
+        Logger::log(STD_MSG, "SD Card Detect Pin Detected");
       }
       else {
-        Serial.println(F("SD Card Detect Pin Not Detected"));
+        Logger::log(STD_MSG, "SD Card Detect Pin Not Detected");
         this->supported = false;
         return false;
       }
@@ -42,7 +42,7 @@ bool SDInterface::initSD() {
     #else
       if (!SD.begin(SD_CS)) {
     #endif
-      Serial.println(F("Failed to mount SD Card"));
+      Logger::log(WARN_MSG, "Failed to mount SD Card");
       this->supported = false;
       return false;
     }
@@ -78,10 +78,10 @@ bool SDInterface::initSD() {
       }
 
       if (!SD.exists("/SCRIPTS")) {
-        Serial.println("/SCRIPTS does not exist. Creating...");
+        Logger::log(STD_MSG, "/SCRIPTS does not exist. Creating...");
 
         SD.mkdir("/SCRIPTS");
-        Serial.println("/SCRIPTS created");
+        Logger::log(STD_MSG, "/SCRIPTS created");
       }
 
       this->sd_files = new LinkedList<String>();
@@ -92,7 +92,7 @@ bool SDInterface::initSD() {
   }
 
   #else
-    Serial.println("SD support disabled, skipping init");
+    Logger::log(WARN_MSG, "SD support disabled, skipping init");
     return false;
   #endif
 }
@@ -178,7 +178,7 @@ void SDInterface::runUpdate() {
         display_obj.tft.setTextColor(TFT_RED);
         display_obj.tft.println(F(text_table2[0]));
       #endif
-      Serial.println(F("Error, could not find \"update.bin\""));
+      Logger::log(WARN_MSG, "Error, could not find \"update.bin\"");
       #ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_WHITE);
       #endif
@@ -192,7 +192,7 @@ void SDInterface::runUpdate() {
       #ifdef HAS_SCREEN
         display_obj.tft.println(F(text_table2[1]));
       #endif
-      Serial.println(F("Starting update over SD. Please wait..."));
+      Logger::log(STD_MSG, "Starting update over SD. Please wait...");
       this->performUpdate(updateBin, updateSize);
     }
     else {
@@ -200,7 +200,7 @@ void SDInterface::runUpdate() {
         display_obj.tft.setTextColor(TFT_RED);
         display_obj.tft.println(F(text_table2[2]));
       #endif
-      Serial.println(F("Error, file is empty"));
+      Logger::log(WARN_MSG, "Error, file is empty");
       #ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_WHITE);
       #endif
@@ -213,7 +213,7 @@ void SDInterface::runUpdate() {
     #ifdef HAS_SCREEN
       display_obj.tft.println(F(text_table2[3]));
     #endif
-    Serial.println(F("rebooting..."));
+    Logger::log(STD_MSG, "rebooting...");
     //SD.remove("/update.bin");      
     delay(1000);
     ESP.restart();
@@ -223,7 +223,7 @@ void SDInterface::runUpdate() {
       display_obj.tft.setTextColor(TFT_RED);
       display_obj.tft.println(F(text_table2[4]));
     #endif
-    Serial.println(F("Could not load update.bin from sd root"));
+    Logger::log(WARN_MSG, "Could not load update.bin from sd root");
     #ifdef HAS_SCREEN
       display_obj.tft.setTextColor(TFT_WHITE);
     #endif
@@ -241,28 +241,28 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
       #ifdef HAS_SCREEN
         display_obj.tft.println(text_table2[7] + String(written) + text_table2[10]);
       #endif
-      Serial.println("Written : " + String(written) + " successfully");
+      Logger::log(STD_MSG, "Written : " + String(written) + " successfully");
     }
     else {
       #ifdef HAS_SCREEN
         display_obj.tft.println(text_table2[8] + String(written) + "/" + String(updateSize) + text_table2[9]);
       #endif
-      Serial.println("Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
+      Logger::log(WARN_MSG, "Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
     }
     if (Update.end()) {
-      Serial.println("OTA done!");
+      Logger::log(STD_MSG, "OTA done!");
       if (Update.isFinished()) {
         #ifdef HAS_SCREEN
           display_obj.tft.println(F(text_table2[11]));
         #endif
-        Serial.println(F("Update successfully completed. Rebooting."));
+        Logger::log(STD_MSG, "Update successfully completed. Rebooting.");
       }
       else {
         #ifdef HAS_SCREEN
           display_obj.tft.setTextColor(TFT_RED);
           display_obj.tft.println(text_table2[12]);
         #endif
-        Serial.println("Update not finished? Something went wrong!");
+        Logger::log(WARN_MSG, "Update not finished? Something went wrong!");
         #ifdef HAS_SCREEN
           display_obj.tft.setTextColor(TFT_WHITE);
         #endif
@@ -272,7 +272,7 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
       #ifdef HAS_SCREEN
         display_obj.tft.println(text_table2[13] + String(Update.getError()));
       #endif
-      Serial.println("Error Occurred. Error #: " + String(Update.getError()));
+      Logger::log(WARN_MSG, "Error Occurred. Error #: " + String(Update.getError()));
     }
 
   }
@@ -281,7 +281,7 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
     #ifdef HAS_SCREEN
       display_obj.tft.println(text_table2[14]);
     #endif
-    Serial.println("Not enough space to begin OTA");
+    Logger::log(WARN_MSG, "Not enough space to begin OTA");
   }
 }
 

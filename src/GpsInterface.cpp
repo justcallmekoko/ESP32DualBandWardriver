@@ -22,7 +22,7 @@ void GpsInterface::begin() {
   delay(1000);
 
   if (Serial2.available()) {
-    Serial.println("GPS Attached Successfully");
+    Logger::log(GUD_MSG, "GPS Attached Successfully");
     this->gps_enabled = true;
     while (Serial2.available()) {
       //Fetch the character one by one
@@ -33,7 +33,7 @@ void GpsInterface::begin() {
   }
   else {
     this->gps_enabled = false;
-    Serial.println("GPS Not Found");
+    Logger::log(WARN_MSG, "GPS Not Found");
   }
   
 

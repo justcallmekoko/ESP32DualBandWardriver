@@ -28,5 +28,6 @@
 //// Device stuff
 #define HAS_PSRAM
 #define HAS_GPS
+#define HAS_SD
 
 #endif
