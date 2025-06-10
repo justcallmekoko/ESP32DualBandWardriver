@@ -5,6 +5,7 @@
 #include "GpsInterface.h"
 #include "SDInterface.h"
 #include "Switches.h"
+#include "WiFiOps.h"
 #include "utils.h"
 #include "logger.h"
 
@@ -13,6 +14,7 @@ Settings settings;
 GpsInterface gps;
 BatteryInterface battery;
 SDInterface sd_obj;
+WiFiOps wifi_ops;
 
 void setup() {
   Serial.begin(115200);
