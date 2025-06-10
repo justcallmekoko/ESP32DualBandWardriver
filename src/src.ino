@@ -42,13 +42,18 @@ void setup() {
   // Init GPS
   gps.begin();
 
+  wifi_ops.begin();
+
   Logger::log(GUD_MSG, "Initialization complete!");
 
 }
 
 void loop() {
+  // Take current time of this loop for functions
   uint32_t currentTime = millis();
 
+  // Refresh all functions
+  wifi_ops.main(currentTime);
   settings.main(currentTime);
   battery.main(currentTime);
   gps.main();

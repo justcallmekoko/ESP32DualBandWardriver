@@ -18,6 +18,8 @@ class WiFiOps
   private:
 
   public:
+    bool begin();
+    void main(uint32_t currentTime);
 
 };
 
