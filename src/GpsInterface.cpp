@@ -2,28 +2,15 @@
 
 #ifdef HAS_GPS
 
-extern GpsInterface gps_obj;
+extern GpsInterface gps;
 
 char nmeaBuffer[100];
 
 MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
 
-HardwareSerial Serial2(GPS_SERIAL_INDEX);
+//HardwareSerial Serial2(GPS_SERIAL_INDEX);
 
 void GpsInterface::begin() {
-
-  /*#ifdef MARAUDER_MINI
-    pinMode(26, OUTPUT);
-
-    delay(1);
-
-    analogWrite(26, 243);
-    delay(1);
-
-    Serial.println("Activated GPS");
-    delay(100);
-  #endif*/
-
   
   Serial2.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
 
@@ -40,7 +27,6 @@ void GpsInterface::begin() {
     while (Serial2.available()) {
       //Fetch the character one by one
       char c = Serial2.read();
-      //Serial.print(c);
       //Pass the character to the library
       nmea.process(c);
     }
@@ -60,7 +46,7 @@ void GpsInterface::begin() {
 
 //passthrough for other objects
 void gps_nmea_notimp(MicroNMEA& nmea){
-  gps_obj.enqueue(nmea);
+  gps.enqueue(nmea);
 }
 
 void GpsInterface::enqueue(MicroNMEA& nmea){

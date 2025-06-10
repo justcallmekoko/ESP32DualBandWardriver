@@ -7,6 +7,7 @@
 
 #include "configs.h"
 #include "Adafruit_MAX1704X.h"
+#include "utils.h"
 
 #include <Wire.h>
 

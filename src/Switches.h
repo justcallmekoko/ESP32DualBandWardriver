@@ -2,6 +2,7 @@
 #define Switches_h
 
 #include <Arduino.h>
+#include "utils.h"
 
 class Switches {
 	private:

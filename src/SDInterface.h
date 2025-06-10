@@ -11,10 +11,11 @@
 #ifdef HAS_SCREEN
   #include "Display.h"
 #endif
+#include "utils.h"
 #include <Update.h>
 
-extern Buffer buffer_obj;
-extern Settings settings_obj;
+extern Buffer buffer;
+extern Settings settings;
 #ifdef HAS_SCREEN
   extern Display display_obj;
 #endif
@@ -33,10 +34,7 @@ class SDInterface {
 
   public:
     uint8_t cardType;
-    //uint64_t cardSizeBT;
-    //uint64_t cardSizeKB;
     uint64_t cardSizeMB;
-    //uint64_t cardSizeGB;
     bool supported = false;
 
     String card_sz;

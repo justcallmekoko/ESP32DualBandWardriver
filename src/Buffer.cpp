@@ -1,5 +1,4 @@
 #include "Buffer.h"
-#include "lang_var.h"
 
 Buffer::Buffer(){
   bufA = (uint8_t*)malloc(BUF_SIZE);
@@ -47,7 +46,7 @@ void Buffer::open(bool is_pcap){
 }
 
 void Buffer::openFile(String file_name, fs::FS* fs, bool serial, bool is_pcap) {
-  bool save_pcap = settings_obj.loadSetting<bool>("SavePCAP");
+  bool save_pcap = settings.loadSetting<bool>("SavePCAP");
   if (!save_pcap) {
     this->fs = NULL;
     this->serial = false;
@@ -106,14 +105,14 @@ void Buffer::add(const uint8_t* buf, uint32_t len, bool is_pcap){
 }
 
 void Buffer::append(wifi_promiscuous_pkt_t *packet, int len) {
-  bool save_packet = settings_obj.loadSetting<bool>(text_table4[7]);
+  bool save_packet = settings.loadSetting<bool>("SavePCAP");
   if (save_packet) {
     add(packet->payload, len, true);
   }
 }
 
 void Buffer::append(String log) {
-  bool save_packet = settings_obj.loadSetting<bool>(text_table4[7]);
+  bool save_packet = settings.loadSetting<bool>("SavePCAP");
   if (save_packet) {
     add((const uint8_t*)log.c_str(), log.length(), false);
   }
@@ -160,7 +159,7 @@ void Buffer::write(const uint8_t* buf, uint32_t len){
 void Buffer::saveFs(){
   file = fs->open(fileName, FILE_APPEND);
   if (!file) {
-    Serial.println(text02+fileName+"'");
+    Serial.println("Failed to open file " + fileName + "'");
     return;
   }
 
