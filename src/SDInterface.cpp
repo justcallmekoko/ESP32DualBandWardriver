@@ -169,14 +169,14 @@ void SDInterface::runUpdate() {
     display_obj.tft.setTextSize(1);
     display_obj.tft.setTextColor(TFT_WHITE);
   
-    display_obj.tft.println(F(text15));
+    display_obj.tft.println("/update.bin");
   #endif
   File updateBin = SD.open("/update.bin");
   if (updateBin) {
     if(updateBin.isDirectory()){
       #ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_RED);
-        display_obj.tft.println(F(text_table2[0]));
+        display_obj.tft.println("Error, could not find \"update.bin\"");
       #endif
       Logger::log(WARN_MSG, "Error, could not find \"update.bin\"");
       #ifdef HAS_SCREEN
@@ -190,7 +190,7 @@ void SDInterface::runUpdate() {
 
     if (updateSize > 0) {
       #ifdef HAS_SCREEN
-        display_obj.tft.println(F(text_table2[1]));
+        display_obj.tft.println("Starting update over SD. Please wait...");
       #endif
       Logger::log(STD_MSG, "Starting update over SD. Please wait...");
       this->performUpdate(updateBin, updateSize);
@@ -198,7 +198,7 @@ void SDInterface::runUpdate() {
     else {
       #ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_RED);
-        display_obj.tft.println(F(text_table2[2]));
+        display_obj.tft.println("Error, file is empty");
       #endif
       Logger::log(WARN_MSG, "Error, file is empty");
       #ifdef HAS_SCREEN
@@ -211,7 +211,7 @@ void SDInterface::runUpdate() {
     
       // whe finished remove the binary from sd card to indicate end of the process
     #ifdef HAS_SCREEN
-      display_obj.tft.println(F(text_table2[3]));
+      display_obj.tft.println("rebooting...");
     #endif
     Logger::log(STD_MSG, "rebooting...");
     //SD.remove("/update.bin");      
@@ -221,7 +221,7 @@ void SDInterface::runUpdate() {
   else {
     #ifdef HAS_SCREEN
       display_obj.tft.setTextColor(TFT_RED);
-      display_obj.tft.println(F(text_table2[4]));
+      display_obj.tft.println("Could not load update.bin from sd root");
     #endif
     Logger::log(WARN_MSG, "Could not load update.bin from sd root");
     #ifdef HAS_SCREEN
@@ -239,13 +239,13 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
     size_t written = Update.writeStream(updateSource);
     if (written == updateSize) {
       #ifdef HAS_SCREEN
-        display_obj.tft.println(text_table2[7] + String(written) + text_table2[10]);
+        display_obj.tft.println("Written : " + String(written) + " successfully");
       #endif
       Logger::log(STD_MSG, "Written : " + String(written) + " successfully");
     }
     else {
       #ifdef HAS_SCREEN
-        display_obj.tft.println(text_table2[8] + String(written) + "/" + String(updateSize) + text_table2[9]);
+        display_obj.tft.println("Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
       #endif
       Logger::log(WARN_MSG, "Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
     }
@@ -253,14 +253,14 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
       Logger::log(STD_MSG, "OTA done!");
       if (Update.isFinished()) {
         #ifdef HAS_SCREEN
-          display_obj.tft.println(F(text_table2[11]));
+          display_obj.tft.println("Update successfully completed. Rebooting.");
         #endif
         Logger::log(STD_MSG, "Update successfully completed. Rebooting.");
       }
       else {
         #ifdef HAS_SCREEN
           display_obj.tft.setTextColor(TFT_RED);
-          display_obj.tft.println(text_table2[12]);
+          display_obj.tft.println("Update not finished? Something went wrong!");
         #endif
         Logger::log(WARN_MSG, "Update not finished? Something went wrong!");
         #ifdef HAS_SCREEN
@@ -270,7 +270,7 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
     }
     else {
       #ifdef HAS_SCREEN
-        display_obj.tft.println(text_table2[13] + String(Update.getError()));
+        display_obj.tft.println("Error Occurred. Error #: " + String(Update.getError()));
       #endif
       Logger::log(WARN_MSG, "Error Occurred. Error #: " + String(Update.getError()));
     }
@@ -279,7 +279,7 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
   else
   {
     #ifdef HAS_SCREEN
-      display_obj.tft.println(text_table2[14]);
+      display_obj.tft.println("Not enough space to begin OTA");
     #endif
     Logger::log(WARN_MSG, "Not enough space to begin OTA");
   }
