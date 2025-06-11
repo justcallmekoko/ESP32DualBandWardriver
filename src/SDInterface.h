@@ -6,7 +6,9 @@
 #include "configs.h"
 
 #include "settings.h"
+#include "FS.h"
 #include "SD.h"
+#include "SPI.h"
 #include "Buffer.h"
 #ifdef HAS_SCREEN
   #include "Display.h"
@@ -28,9 +30,7 @@ extern Settings settings;
 class SDInterface {
 
   private:
-  #if (defined(MARAUDER_M5STICKC) || defined(HAS_CYD_TOUCH))
-    SPIClass *spiExt;
-  #endif
+    //SPIClass *spiExt;
     bool checkDetectPin();
 
   public:

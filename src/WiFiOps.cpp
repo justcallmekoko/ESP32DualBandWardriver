@@ -43,7 +43,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
       WiFi.scanDelete();
 
       // Start a new scan on all channels
-      Logger::log(GUD_MSG, "Starting new scan: " + (String)gps.getDatetime());
+      //Logger::log(GUD_MSG, "Starting new scan: " + (String)gps.getDatetime());
       WiFi.scanNetworks(true, true, false, 110);
     }
   }

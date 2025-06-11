@@ -24,7 +24,10 @@
 
 
 //// SD stuff
-#define SD_CS 15
+#define SPI_SCK  6
+#define SPI_MISO 2
+#define SPI_MOSI 7 
+#define SD_CS    10
 
 
 //// Switch stuff
