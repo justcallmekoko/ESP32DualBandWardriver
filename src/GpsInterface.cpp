@@ -8,25 +8,25 @@ char nmeaBuffer[100];
 
 MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
 
-//HardwareSerial Serial2(GPS_SERIAL_INDEX);
+HardwareSerial GPS(GPS_SERIAL_INDEX);
 
 void GpsInterface::begin() {
   
-  Serial2.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
+  GPS.begin(9600, SERIAL_8N1, RX_TO_GPS, TX_TO_GPS);
 
-  MicroNMEA::sendSentence(Serial2, "$PSTMSETPAR,1201,0x00000042");
-  MicroNMEA::sendSentence(Serial2, "$PSTMSAVEPAR");
+  MicroNMEA::sendSentence(GPS, "$PSTMSETPAR,1201,0x00000042");
+  MicroNMEA::sendSentence(GPS, "$PSTMSAVEPAR");
 
-  MicroNMEA::sendSentence(Serial2, "$PSTMSRR");
+  MicroNMEA::sendSentence(GPS, "$PSTMSRR");
 
   delay(1000);
 
-  if (Serial2.available()) {
+  if (GPS.available()) {
     Logger::log(GUD_MSG, "GPS Attached Successfully");
     this->gps_enabled = true;
-    while (Serial2.available()) {
+    while (GPS.available()) {
       //Fetch the character one by one
-      char c = Serial2.read();
+      char c = GPS.read();
       //Pass the character to the library
       nmea.process(c);
     }
@@ -307,7 +307,7 @@ void GpsInterface::flush_queue_textin(){
 }
 
 void GpsInterface::sendSentence(const char* sentence){
-  MicroNMEA::sendSentence(Serial2, sentence);
+  MicroNMEA::sendSentence(GPS, sentence);
 }
 
 void GpsInterface::sendSentence(Stream &s, const char* sentence){
@@ -473,7 +473,14 @@ void GpsInterface::setGPSInfo() {
   String nmea_sentence = String(nmea.getSentence());
   if(nmea_sentence != "") this->nmea_sentence = nmea_sentence;
 
-  this->good_fix = nmea.isValid();
+  bool fix = nmea.isValid();
+
+  if ((fix) && (!this->good_fix))
+    Logger::log(GUD_MSG, "GPS acquired fix!");
+  else if ((!fix) && (this->good_fix))
+    Logger::log(WARN_MSG, "GPS lost fix!");
+
+  this->good_fix = fix;
   this->nav_system = nmea.getNavSystem();
   this->num_sats = nmea.getNumSatellites();
 
@@ -638,9 +645,9 @@ String GpsInterface::getNmeaNotparsed() {
 }
 
 void GpsInterface::main() {
-  while (Serial2.available()) {
+  while (GPS.available()) {
     //Fetch the character one by one
-    char c = Serial2.read();
+    char c = GPS.read();
     //Serial.print(c);
     //Pass the character to the library
     nmea.process(c);

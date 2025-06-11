@@ -15,6 +15,7 @@ GpsInterface gps;
 BatteryInterface battery;
 SDInterface sd_obj;
 WiFiOps wifi_ops;
+Utils utils;
 
 void setup() {
   Serial.begin(115200);
@@ -59,4 +60,9 @@ void loop() {
   gps.main();
   sd_obj.main();
   buffer.save();
+
+  if (gps.getFixStatus())
+    wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
+  else
+    wifi_ops.setCurrentScanMode(WIFI_STANDBY);
 }

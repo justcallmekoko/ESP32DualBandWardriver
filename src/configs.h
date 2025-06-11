@@ -1,6 +1,12 @@
 #ifndef configs_h
 #define configs_h
 
+//// Firmware info stuff
+#define FIRMWARE_VERSION "v0.1.0"
+#define DEVICE_NAME      "JCMK C5 Wardriver"
+
+
+
 //// Buffer stuff
 #define BUF_SIZE 2 * 1024
 #define SNAP_LEN 2324
@@ -12,9 +18,9 @@
 
 
 //// GPS stuff
-#define GPS_SERIAL_INDEX 2
-#define GPS_TX 25
-#define GPS_RX 26
+#define GPS_SERIAL_INDEX 1
+#define TX_TO_GPS 13
+#define RX_TO_GPS 14
 
 
 //// SD stuff
@@ -29,5 +35,10 @@
 #define HAS_PSRAM
 #define HAS_GPS
 #define HAS_SD
+
+
+
+////WiFi stuff
+#define mac_history_len 500
 
 #endif
