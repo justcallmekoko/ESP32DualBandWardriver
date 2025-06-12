@@ -34,7 +34,7 @@ class scanCallbacks : public NimBLEScanCallbacks {
       Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
 
       if (do_save)
-        buffer.append(wardrive_line);
+        buffer.append(wardrive_line + "\n");
     }
   }
 };
