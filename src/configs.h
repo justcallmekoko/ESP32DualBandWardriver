@@ -6,6 +6,10 @@
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
+// LED stuff
+#define LED_PIN 28
+
+
 // Display stuff
 #define ON  HIGH
 #define OFF LOW

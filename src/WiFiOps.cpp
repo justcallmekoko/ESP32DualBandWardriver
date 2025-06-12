@@ -58,6 +58,7 @@ void WiFiOps::processWardrive(uint16_t networks) {
   // Process results if networks found
   if (networks > 0) {
     for (int i = 0; i < networks; i++) {
+      digitalWrite(LED_PIN, HIGH);
       display_string = "";
       do_save = false;
       uint8_t *this_bssid_raw = WiFi.BSSID(i);
@@ -103,11 +104,15 @@ void WiFiOps::processWardrive(uint16_t networks) {
       String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
       Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
+      digitalWrite(LED_PIN, LOW);
+
       if (do_save) {
         buffer.append(wardrive_line + "\n");
       }
     }
   }
+
+  digitalWrite(LED_PIN, LOW);
 }
 
 bool WiFiOps::mac_cmp(struct mac_addr addr1, struct mac_addr addr2) {
