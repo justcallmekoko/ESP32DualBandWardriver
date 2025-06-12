@@ -6,6 +6,10 @@
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
+// BLE stuff
+#define BLE_SCAN_DURATION   1 * 1000 // 5 seconds
+
+
 // LED stuff
 #define LED_PIN 28
 

@@ -125,6 +125,23 @@ String Utils::macToString(uint8_t macAddr[6]) {
   return String(macStr);
 }
 
+bool Utils::stringToMac(const char* macStr, uint8_t bytes[6]) {
+  if (macStr == nullptr) return false;
+
+  int values[6];
+  if (sscanf(macStr, "%x:%x:%x:%x:%x:%x",
+             &values[0], &values[1], &values[2],
+             &values[3], &values[4], &values[5]) != 6) {
+    return false;  // Invalid format
+  }
+
+  for (int i = 0; i < 6; ++i) {
+    bytes[i] = static_cast<uint8_t>(values[i]);
+  }
+
+  return true;
+}
+
 void Utils::convertMacStringToUint8(const String& macStr, uint8_t macAddr[6]) {
     // Ensure the input string is in the format "XX:XX:XX:XX:XX:XX"
     if (macStr.length() != 17) {

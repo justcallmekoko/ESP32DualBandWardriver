@@ -20,7 +20,7 @@ void Buffer::createFile(String name, bool is_pcap){
     } while(fs->exists(fileName));
   }
 
-  Serial.println(fileName);
+  Logger::log(GUD_MSG, fileName);
   
   file = fs->open(fileName, FILE_WRITE);
   file.close();
@@ -76,17 +76,14 @@ void Buffer::logOpen(String file_name, fs::FS* fs, bool serial) {
 void Buffer::add(const uint8_t* buf, uint32_t len, bool is_pcap){
   // buffer is full -> drop packet
   if((useA && bufSizeA + len >= BUF_SIZE && bufSizeB > 0) || (!useA && bufSizeB + len >= BUF_SIZE && bufSizeA > 0)){
-    //Serial.print(";"); 
     return;
   }
   
   if(useA && bufSizeA + len + 16 >= BUF_SIZE && bufSizeB == 0){
     useA = false;
-    //Serial.println("\nswitched to buffer B");
   }
   else if(!useA && bufSizeB + len + 16 >= BUF_SIZE && bufSizeA == 0){
     useA = true;
-    //Serial.println("\nswitched to buffer A");
   }
 
   uint32_t microSeconds = micros(); // e.g. 45200400 => 45s 200ms 400us
@@ -159,7 +156,7 @@ void Buffer::write(const uint8_t* buf, uint32_t len){
 void Buffer::saveFs(){
   file = fs->open(fileName, FILE_APPEND);
   if (!file) {
-    Serial.println("Failed to open file " + fileName + "'");
+    Logger::log(WARN_MSG, "Failed to open file " + fileName + "'");
     return;
   }
 

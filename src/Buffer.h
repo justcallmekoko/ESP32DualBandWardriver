@@ -8,6 +8,7 @@
 #include "settings.h"
 #include "esp_wifi_types.h"
 #include "configs.h"
+#include "logger.h"
 //#include "utils.h"
 
 //#define BUF_SIZE 2 * 1024 // Had to reduce buffer size to save RAM. GG @spacehuhn

@@ -8,12 +8,49 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32
     return 0;
 }
 
+class scanCallbacks : public NimBLEScanCallbacks {
+
+  void onDiscovered(const NimBLEAdvertisedDevice* advertisedDevice) override {
+
+    extern WiFiOps wifi_ops;
+
+    uint8_t macBytes[6];
+
+    if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
+      
+      utils.stringToMac(advertisedDevice->getAddress().toString().c_str(), macBytes);
+
+      if (wifi_ops.seen_mac(macBytes))
+        return;
+
+      wifi_ops.save_mac(macBytes);
+
+      bool do_save = false;
+
+      if (gps.getFixStatus())
+        do_save = true;
+
+      String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
+      Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
+
+      if (do_save)
+        buffer.append(wardrive_line);
+    }
+  }
+};
+
 void WiFiOps::setCurrentScanMode(uint8_t scan_mode) {
   this->current_scan_mode = scan_mode;
 }
 
 uint8_t WiFiOps::getCurrentScanMode() {
   return this->current_scan_mode;
+}
+
+void WiFiOps::scanBLE() {
+  //Logger::log(STD_MSG, "Starting BLE scan...");
+  pBLEScan->start(BLE_SCAN_DURATION, false, false);
+  //Logger::log(STD_MSG, "Completed BLE scan");
 }
 
 int WiFiOps::runWardrive(uint32_t currentTime) {
@@ -42,8 +79,13 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
       // Delete the scan data
       WiFi.scanDelete();
 
+      // Scan BLE here
+      this->scanBLE();
+
+      while(pBLEScan->isScanning())
+        delay(1);
+
       // Start a new scan on all channels
-      //Logger::log(GUD_MSG, "Starting new scan: " + (String)gps.getDatetime());
       WiFi.scanNetworks(true, true, false, 110);
     }
   }
@@ -221,12 +263,40 @@ void WiFiOps::startLog(String file_name) {
   );
 }
 
-bool WiFiOps::begin() {
-  this->current_scan_mode = WIFI_STANDBY;
-
+void WiFiOps::initWiFi() {
   WiFi.STA.begin();
   WiFi.setBandMode(WIFI_BAND_MODE_AUTO);
   delay(100);
+}
+
+void WiFiOps::deinitWiFi() {
+  WiFi.disconnect(true);
+}
+
+void WiFiOps::deinitBLE() {
+  pBLEScan->stop();
+  pBLEScan->clearResults();
+  NimBLEDevice::deinit();
+}
+
+void WiFiOps::initBLE() {
+  NimBLEDevice::init("");
+  pBLEScan = NimBLEDevice::getScan();
+
+  pBLEScan->setScanCallbacks(new scanCallbacks(), false);
+  pBLEScan->setActiveScan(true);
+  pBLEScan->setDuplicateFilter(false);       // Disables internal filtering based on MAC
+  pBLEScan->setMaxResults(0);                // Prevent storing results in NimBLEScanResults
+}
+
+bool WiFiOps::begin() {
+  this->current_scan_mode = WIFI_STANDBY;
+
+  // Init WiFi
+  this->initWiFi();
+
+  // Init NimBLE
+  this->initBLE();
 
   startLog("wardrive");
   String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION + ",model=" + (String)DEVICE_NAME + ",release=" + (String)FIRMWARE_VERSION + ",device=" + (String)DEVICE_NAME + ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
