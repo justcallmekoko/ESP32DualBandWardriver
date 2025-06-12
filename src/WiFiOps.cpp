@@ -21,7 +21,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
   int scan_status = -1;
 
   // Check GPS status
-  if ((gps.getGpsModuleStatus()) && (gps.getFixStatus())) {
+  if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
 
     scan_status = WiFi.scanComplete();
 

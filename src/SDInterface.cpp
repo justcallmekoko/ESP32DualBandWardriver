@@ -10,7 +10,7 @@ bool SDInterface::initSD() {
     //enum { SPI_SCK = 0, SPI_MISO = 36, SPI_MOSI = 26 };
     //this->spiExt = new SPIClass();
     //this->spiExt->begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
-    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
+    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS); // Don't need this if init display first and using same SPI pins
     if (!SD.begin(SD_CS)) {
       Logger::log(WARN_MSG, "Failed to mount SD Card");
       this->supported = false;

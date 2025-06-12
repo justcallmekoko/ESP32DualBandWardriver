@@ -2,6 +2,7 @@
 #include "BatteryInterface.h"
 #include "Buffer.h"
 #include "settings.h"
+#include "display.h"
 #include "GpsInterface.h"
 #include "SDInterface.h"
 #include "Switches.h"
@@ -13,6 +14,7 @@ Buffer buffer;
 Settings settings;
 GpsInterface gps;
 BatteryInterface battery;
+Display display;
 SDInterface sd_obj;
 WiFiOps wifi_ops;
 Utils utils;
@@ -22,6 +24,9 @@ void setup() {
 
   while (!Serial)
     delay(10);
+
+  // Init the display before SD
+  //display.begin();
 
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
@@ -61,7 +66,7 @@ void loop() {
   sd_obj.main();
   buffer.save();
 
-  if (gps.getFixStatus())
+  if ((gps.getFixStatus()) && (sd_obj.supported))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
   else
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);

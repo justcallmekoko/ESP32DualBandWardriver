@@ -6,6 +6,10 @@
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
+// Display stuff
+#define ON  HIGH
+#define OFF LOW
+
 
 //// Buffer stuff
 #define BUF_SIZE 2 * 1024
@@ -38,7 +42,6 @@
 #define HAS_PSRAM
 #define HAS_GPS
 #define HAS_SD
-
 
 
 ////WiFi stuff
