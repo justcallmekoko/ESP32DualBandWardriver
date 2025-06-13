@@ -25,8 +25,8 @@
 
 
 //// Battery stuff
-#define I2C_SDA 23
-#define I2C_SCL 24
+#define I2C_SDA 25
+#define I2C_SCL 26
 
 
 //// GPS stuff
