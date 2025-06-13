@@ -1,5 +1,4 @@
 #include "Buffer.h"
-#include "lang_var.h"
 
 Buffer::Buffer(){
   bufA = (uint8_t*)malloc(BUF_SIZE);
@@ -21,7 +20,7 @@ void Buffer::createFile(String name, bool is_pcap){
     } while(fs->exists(fileName));
   }
 
-  Serial.println(fileName);
+  Logger::log(GUD_MSG, fileName);
   
   file = fs->open(fileName, FILE_WRITE);
   file.close();
@@ -47,7 +46,7 @@ void Buffer::open(bool is_pcap){
 }
 
 void Buffer::openFile(String file_name, fs::FS* fs, bool serial, bool is_pcap) {
-  bool save_pcap = settings_obj.loadSetting<bool>("SavePCAP");
+  bool save_pcap = settings.loadSetting<bool>("SavePCAP");
   if (!save_pcap) {
     this->fs = NULL;
     this->serial = false;
@@ -77,17 +76,14 @@ void Buffer::logOpen(String file_name, fs::FS* fs, bool serial) {
 void Buffer::add(const uint8_t* buf, uint32_t len, bool is_pcap){
   // buffer is full -> drop packet
   if((useA && bufSizeA + len >= BUF_SIZE && bufSizeB > 0) || (!useA && bufSizeB + len >= BUF_SIZE && bufSizeA > 0)){
-    //Serial.print(";"); 
     return;
   }
   
   if(useA && bufSizeA + len + 16 >= BUF_SIZE && bufSizeB == 0){
     useA = false;
-    //Serial.println("\nswitched to buffer B");
   }
   else if(!useA && bufSizeB + len + 16 >= BUF_SIZE && bufSizeA == 0){
     useA = true;
-    //Serial.println("\nswitched to buffer A");
   }
 
   uint32_t microSeconds = micros(); // e.g. 45200400 => 45s 200ms 400us
@@ -106,14 +102,14 @@ void Buffer::add(const uint8_t* buf, uint32_t len, bool is_pcap){
 }
 
 void Buffer::append(wifi_promiscuous_pkt_t *packet, int len) {
-  bool save_packet = settings_obj.loadSetting<bool>(text_table4[7]);
+  bool save_packet = settings.loadSetting<bool>("SavePCAP");
   if (save_packet) {
     add(packet->payload, len, true);
   }
 }
 
 void Buffer::append(String log) {
-  bool save_packet = settings_obj.loadSetting<bool>(text_table4[7]);
+  bool save_packet = settings.loadSetting<bool>("SavePCAP");
   if (save_packet) {
     add((const uint8_t*)log.c_str(), log.length(), false);
   }
@@ -160,7 +156,7 @@ void Buffer::write(const uint8_t* buf, uint32_t len){
 void Buffer::saveFs(){
   file = fs->open(fileName, FILE_APPEND);
   if (!file) {
-    Serial.println(text02+fileName+"'");
+    Logger::log(WARN_MSG, "Failed to open file " + fileName + "'");
     return;
   }
 

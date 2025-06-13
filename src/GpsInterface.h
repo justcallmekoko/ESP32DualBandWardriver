@@ -8,6 +8,8 @@
 #include <LinkedList.h>
 
 #include "configs.h"
+#include "utils.h"
+#include "logger.h"
 
 //#define GPS_TEXT_MAXLINES 5 //default:5 lines in the buffer maximum
 //#define GPS_TEXT_MAXCYCLES 1 //default:1

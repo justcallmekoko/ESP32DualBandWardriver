@@ -1,5 +1,4 @@
 #include "BatteryInterface.h"
-#include "lang_var.h"
 BatteryInterface::BatteryInterface() {
   
 }
@@ -12,9 +11,9 @@ void BatteryInterface::main(uint32_t currentTime) {
       int8_t new_level = this->getBatteryLevel();
       //this->battery_level = this->getBatteryLevel();
       if (this->battery_level != new_level) {
-        Serial.println(text00 + (String)new_level);
+        Logger::log(STD_MSG, "Battery Level changed: " + (String)new_level);
         this->battery_level = new_level;
-        Serial.println("Battery Level: " + (String)this->battery_level);
+        Logger::log(STD_MSG, "Battery Level: " + (String)this->battery_level);
       }
     }
   }
@@ -28,13 +27,13 @@ void BatteryInterface::RunSetup() {
 
     Wire.begin(I2C_SDA, I2C_SCL);
 
-    Serial.println("Checking for battery monitors...");
+    Logger::log(STD_MSG, "Checking for battery monitors...");
 
     Wire.beginTransmission(IP5306_ADDR);
     error = Wire.endTransmission();
 
     if (error == 0) {
-      Serial.println("Detected IP5306");
+      Logger::log(GUD_MSG, "Detected IP5306");
       this->has_ip5306 = true;
       this->i2c_supported = true;
     }
@@ -44,7 +43,7 @@ void BatteryInterface::RunSetup() {
 
     if (error == 0) {
       if (maxlipo.begin()) {
-        Serial.println("Detected MAX17048");
+        Logger::log(GUN_MSG, "Detected MAX17048");
         this->has_max17048 = true;
         this->i2c_supported = true;
       }
