@@ -4,7 +4,7 @@ Logs are formatted for Wigle and saved to SD card.
 
 ## Connections
 
-### GPS
+### [GPS](https://a.co/d/hIqIitg)
 | ESP32-C5 | GPS |
 | -------- | --- |
 | `3V3`    | `VCC` |
@@ -12,7 +12,7 @@ Logs are formatted for Wigle and saved to SD card.
 | `GPIO13` | `RX` |
 | `GPIO14` | `TX` |
 
-### SD Card
+### [SD Card](https://www.sparkfun.com/sparkfun-microsd-transflash-breakout.html)
 | ESP32-C5 | SD |
 | -------- | -- |
 | `3V3`    | `VCC` |
