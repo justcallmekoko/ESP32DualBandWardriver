@@ -8,16 +8,22 @@
 #include "Switches.h"
 #include "WiFiOps.h"
 #include "utils.h"
+#include "ui.h"
 #include "logger.h"
 
 Buffer buffer;
 Settings settings;
 GpsInterface gps;
 BatteryInterface battery;
-Display display;
-SDInterface sd_obj;
+//Display display;
+//SDInterface sd_obj;
 WiFiOps wifi_ops;
 Utils utils;
+UI ui_obj;
+
+SPIClass sharedSPI(SPI);
+Display display = Display(&sharedSPI, TFT_CS, TFT_DC, TFT_RST);
+SDInterface sd_obj = SDInterface(&sharedSPI, SD_CS);
 
 void setup() {
   Serial.begin(115200);
@@ -25,8 +31,11 @@ void setup() {
   while (!Serial)
     delay(10);
 
+  // Do SPI stuff first
+  sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+
   // Init the display before SD
-  //display.begin();
+  display.begin();
 
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
@@ -52,9 +61,16 @@ void setup() {
   // Init GPS
   gps.begin();
 
+  // Init wifi and bluetooth
   wifi_ops.begin();
 
+  // Init UI
+  ui_obj.begin();
+
   Logger::log(GUD_MSG, "Initialization complete!");
+
+  //display.clearScreen();
+  display.tft->println("Wardriving...");
 
 }
 
@@ -69,6 +85,7 @@ void loop() {
   gps.main();
   sd_obj.main();
   buffer.save();
+  ui_obj.main(currentTime);
 
   if ((gps.getFixStatus()) && (sd_obj.supported))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);

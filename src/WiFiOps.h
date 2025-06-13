@@ -34,6 +34,11 @@ class WiFiOps
     uint32_t init_time;
     struct mac_addr mac_history[mac_history_len];
 
+    uint32_t current_net_count = 0;
+    uint32_t current_2g4_count = 0;
+    uint32_t current_5g_count = 0;
+    uint32_t current_ble_count = 0;
+
     void initWiFi();
     void initBLE();
     void deinitWiFi();
@@ -53,6 +58,14 @@ class WiFiOps
     void main(uint32_t currentTime);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
+    void setCurrentNetCount(uint32_t count);
+    void setCurrent2g4Count(uint32_t count);
+    void setCurrent5gCount(uint32_t count);
+    void setCurrentBLECount(uint32_t count);
+    uint32_t getCurrentNetCount();
+    uint32_t getCurrent2g4Count();
+    uint32_t getCurrent5gCount();
+    uint32_t getCurrentBLECount();
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
 

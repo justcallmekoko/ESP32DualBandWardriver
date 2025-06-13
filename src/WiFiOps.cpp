@@ -25,6 +25,8 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
       wifi_ops.save_mac(macBytes);
 
+      wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+
       bool do_save = false;
 
       if (gps.getFixStatus())
@@ -45,6 +47,38 @@ void WiFiOps::setCurrentScanMode(uint8_t scan_mode) {
 
 uint8_t WiFiOps::getCurrentScanMode() {
   return this->current_scan_mode;
+}
+
+void WiFiOps::setCurrentNetCount(uint32_t count) {
+  this->current_net_count = count;
+}
+
+void WiFiOps::setCurrent2g4Count(uint32_t count) {
+  this->current_2g4_count = count;
+}
+
+void WiFiOps::setCurrent5gCount(uint32_t count) {
+  this->current_5g_count = count;
+}
+
+void WiFiOps::setCurrentBLECount(uint32_t count) {
+  this->current_ble_count = count;
+}
+
+uint32_t WiFiOps::getCurrentNetCount() {
+  return this->current_net_count;
+}
+
+uint32_t WiFiOps::getCurrent2g4Count() {
+  return this->current_2g4_count;
+}
+
+uint32_t WiFiOps::getCurrent5gCount() {
+  return this->current_5g_count;
+}
+
+uint32_t WiFiOps::getCurrentBLECount() {
+  return this->current_ble_count;
 }
 
 void WiFiOps::scanBLE() {
@@ -72,6 +106,11 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         Logger::log(WARN_MSG, "WiFi scan failed to start!");
     }
     else {
+      this->current_net_count = 0;
+      this->current_ble_count = 0;
+      this->current_2g4_count = 0;
+      this->current_5g_count = 0;
+
       // Scan has completed and is number of networks found
       // Handle the scan results
       this->processWardrive(scan_status);
@@ -111,6 +150,13 @@ void WiFiOps::processWardrive(uint16_t networks) {
         continue;
 
       this->save_mac(this_bssid_raw);
+
+      this->setCurrentNetCount(this->getCurrentNetCount() + 1);
+
+      if (WiFi.channel(i) > 14)
+        this->setCurrent5gCount(this->getCurrent5gCount() + 1);
+      else
+        this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
 
       String ssid = WiFi.SSID(i);
       ssid.replace(",","_");

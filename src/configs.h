@@ -6,17 +6,35 @@
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
-// BLE stuff
+//// BLE stuff
 #define BLE_SCAN_DURATION   1 * 1000 // 5 seconds
 
 
-// LED stuff
+//// LED stuff
 #define LED_PIN 28
 
 
-// Display stuff
+//// Display stuff
 #define ON  HIGH
 #define OFF LOW
+
+#define TFT_HEIGHT 80
+#define TFT_WIDTH  160
+
+#define TFT_SPI_SPEED 27000000
+
+#define TFT_CS   23
+#define TFT_DC   24
+#define TFT_RST  -1
+#define TOUCH_CS -1
+#define TFT_MOSI 7
+#define TFT_SCLK 6
+#define TFT_BL   27
+
+
+//// UI Stuff
+#define UI_UPDATE_TIME 1 * 1000 // 1 second
+
 
 
 //// Buffer stuff
