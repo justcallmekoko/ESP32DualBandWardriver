@@ -34,8 +34,14 @@ void setup() {
   // Do SPI stuff first
   sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
+  // Give SPI some time I guess
+  delay(100);
+
   // Init the display before SD
   display.begin();
+
+  // Give SD some time
+  delay(100);
 
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
@@ -70,7 +76,7 @@ void setup() {
   Logger::log(GUD_MSG, "Initialization complete!");
 
   //display.clearScreen();
-  display.tft->println("Wardriving...");
+  //display.tft->println("Wardriving...");
 
 }
 

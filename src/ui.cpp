@@ -24,11 +24,18 @@ void UI::printBatteryLevel(int8_t batteryLevel) {
 
     // Compute text width and cursor position
     uint8_t charWidth = 6;
-    uint16_t textWidth = strlen(buf) * charWidth;
+    uint16_t textWidth = (strlen(buf) + 5) * charWidth;
     uint16_t x = TFT_WIDTH - textWidth - 2;  // Right-aligned with 2px padding
     uint16_t y = 0;  // Adjust based on layout
 
     display.tft->setCursor(x, y);
+    if (sd_obj.supported)
+      display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    else
+      display.tft->setTextColor(ST77XX_RED, ST77XX_BLACK);
+    display.tft->print("SD");
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->print(" | ");
     display.tft->print(buf);
 }
 
@@ -53,15 +60,28 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
   for (int i = 0; i < 2; i++)
     display.tft->println();
 
-  display.tft->print("2.4GHz: ");
-  display.tft->print(count2g4);
+  if (wifi_ops.getCurrentScanMode() == WIFI_STANDBY)
+    display.tft->println("Status: STANDBY\n");
+  else if (wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING)
+    display.tft->println("Status: SCANNING\n");
 
-  display.tft->print(" | 5GHz: ");
+
+  display.tft->setTextColor(ST77XX_GREEN);
+  display.tft->print("2.4GHz: ");
+  display.tft->setTextColor(ST77XX_WHITE);
+  display.tft->print(count2g4);
+  display.tft->print(" | ");
+
+  display.tft->setTextColor(ST77XX_GREEN);
+  display.tft->print("5GHz: ");
+  display.tft->setTextColor(ST77XX_WHITE);
   display.tft->println(count5g);
 
   display.tft->println();
 
+  display.tft->setTextColor(ST77XX_CYAN);
   display.tft->print("BLE: ");
+  display.tft->setTextColor(ST77XX_WHITE);
   display.tft->print(bleCount);
 
   display.tft->print(" | GPS Sats: ");
@@ -71,7 +91,7 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
 }
 
 void UI::main(uint32_t currentTime) {
-  if (wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING)
+  if ((wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING) || (wifi_ops.getCurrentScanMode() == WIFI_STANDBY))
     this->updateStats(
       currentTime,
       wifi_ops.getCurrentNetCount(),
