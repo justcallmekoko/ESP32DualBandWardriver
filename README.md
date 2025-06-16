@@ -4,6 +4,17 @@ Logs are formatted for Wigle and saved to SD card.
 
 ## Connections
 
+### [Display](https://a.co/d/dO8M3Ec)
+| ESP32-C5 | Display |
+| -------- | -- |
+| `3V3`    | `VCC` |
+| `GND`    | `GND` |
+| `GPIO6`  | `SCK` |
+| `GPIO7`  | `MOSI` |
+| `GPIO23` | `CS` |
+| `GPIO24` | `DC` |
+| `GPIO27` | `BL` |
+
 ### [GPS](https://a.co/d/hIqIitg)
 | ESP32-C5 | GPS |
 | -------- | --- |
