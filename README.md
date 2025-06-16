@@ -14,6 +14,7 @@ Logs are formatted for Wigle and saved to SD card.
 | `GPIO23` | `CS` |
 | `GPIO24` | `DC` |
 | `GPIO27` | `BL` |
+| `RST`    | `RST` |
 
 ### [GPS](https://a.co/d/hIqIitg)
 | ESP32-C5 | GPS |
