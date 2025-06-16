@@ -35,6 +35,13 @@
 //// UI Stuff
 #define UI_UPDATE_TIME 1 * 1000 // 1 second
 
+#define U_BTN 9
+#define D_BTN 8
+#define C_BTN 15
+
+#define C_PULL false
+#define U_PULL false
+#define D_PULL false
 
 
 //// Buffer stuff
@@ -58,6 +65,8 @@
 #define SPI_MISO 2
 #define SPI_MOSI 7 
 #define SD_CS    10
+
+#define UPDATE_KEY "UpdateFile"
 
 
 //// Switch stuff

@@ -35,8 +35,10 @@ void UI::printBatteryLevel(int8_t batteryLevel) {
       display.tft->setTextColor(ST77XX_RED, ST77XX_BLACK);
     display.tft->print("SD");
     display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    display.tft->print(" | ");
-    display.tft->print(buf);
+    if (battery.i2c_supported) {
+      display.tft->print(" | ");
+      display.tft->print(buf);
+    }
 }
 
 void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4, uint32_t count5g, uint32_t bleCount, int gpsSats, int8_t batteryLevel) {
@@ -106,4 +108,13 @@ void UI::main(uint32_t currentTime) {
       gps.getNumSats(),
       battery.getBatteryLevel()
     );
+
+  if (u_btn.justPressed())
+    Logger::log(STD_MSG, "U_BTN Pressed: " + (String)millis());
+
+  if (d_btn.justPressed())
+    Logger::log(STD_MSG, "D_BTN Pressed: " + (String)millis());
+
+  if (c_btn.justPressed())
+    Logger::log(STD_MSG, "C_BTN Pressed: " + (String)millis());
 }

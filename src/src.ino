@@ -15,8 +15,6 @@ Buffer buffer;
 Settings settings;
 GpsInterface gps;
 BatteryInterface battery;
-//Display display;
-//SDInterface sd_obj;
 WiFiOps wifi_ops;
 Utils utils;
 UI ui_obj;
@@ -24,6 +22,10 @@ UI ui_obj;
 SPIClass sharedSPI(SPI);
 Display display = Display(&sharedSPI, TFT_CS, TFT_DC, TFT_RST);
 SDInterface sd_obj = SDInterface(&sharedSPI, SD_CS);
+
+Switches u_btn = Switches(U_BTN, 1000, U_PULL);
+Switches d_btn = Switches(D_BTN, 1000, D_PULL);
+Switches c_btn = Switches(C_BTN, 1000, C_PULL);
 
 void setup() {
   Serial.begin(115200);
@@ -60,6 +62,10 @@ void setup() {
   if(!sd_obj.initSD())
     Logger::log(WARN_MSG, "SD Card NOT Supported");
 
+  // Check for firmware updates now
+  Logger::log(STD_MSG, "Checking for firmware updates...");
+  sd_obj.runUpdate();
+
   // Init battery
   battery.RunSetup();
   battery.battery_level = battery.getBatteryLevel();
@@ -74,10 +80,6 @@ void setup() {
   ui_obj.begin();
 
   Logger::log(GUD_MSG, "Initialization complete!");
-
-  //display.clearScreen();
-  //display.tft->println("Wardriving...");
-
 }
 
 void loop() {

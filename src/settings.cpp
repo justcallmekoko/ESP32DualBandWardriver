@@ -118,6 +118,10 @@ String Settings::loadSetting<String>(String key) {
       return json["Settings"][i]["value"];
   }
 
+  Logger::log(WARN_MSG, "Did not find setting named " + (String)key + ". Creating...");
+  if (this->createDefaultSettings(SPIFFS, true, json["Settings"].size(), "String", key))
+    return "";
+
   return "";
 }
 
@@ -215,6 +219,56 @@ T Settings::saveSetting(String key, int value) {}
 
 template<>
 bool Settings::saveSetting<bool>(String key, int value) {
+  DynamicJsonDocument json(1024); // ArduinoJson v6
+
+  if (deserializeJson(json, this->json_settings_string)) {
+    Logger::log(WARN_MSG, "Could not parse json to save");
+  }
+
+  String settings_string;
+
+  bool found = false;
+
+  for (int i = 0; i < json["Settings"].size(); i++) {
+    if (json["Settings"][i]["name"].as<String>() == key) {
+      json["Settings"][i]["value"] = value;
+
+      File settingsFile = SPIFFS.open("/settings.json", FILE_WRITE);
+
+      if (!settingsFile) {
+        Logger::log(WARN_MSG, "Failed to create settings file");
+        return false;
+      }
+
+      if (serializeJson(json, settingsFile) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to file");
+      }
+      if (serializeJson(json, settings_string) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to string");
+      }
+    
+      // Close the file
+      settingsFile.close();
+    
+      this->json_settings_string = settings_string;
+          
+      return true;
+    }
+  }
+
+  if (!found) {
+    Logger::log(WARN_MSG, "Did not find setting named " + (String)key + ". Creating...");
+    if (this->createDefaultSettings(SPIFFS, true, json["Settings"].size(), "bool", key))
+      return true;
+  }
+  return false;
+}
+
+template <typename T>
+T Settings::saveSetting(String key, String value) {}
+
+template<>
+bool Settings::saveSetting<bool>(String key, String value) {
   DynamicJsonDocument json(1024); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {
@@ -398,6 +452,12 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
     jsonBuffer["Settings"][0]["range"]["min"] = false;
     jsonBuffer["Settings"][0]["range"]["max"] = true;
 
+    jsonBuffer["Settings"][1]["name"] = "UpdateFile";
+    jsonBuffer["Settings"][1]["type"] = "String";
+    jsonBuffer["Settings"][1]["value"] = "";
+    jsonBuffer["Settings"][1]["range"]["min"] = "";
+    jsonBuffer["Settings"][1]["range"]["max"] = "";
+
     if (serializeJson(jsonBuffer, settingsFile) == 0) {
       Logger::log(WARN_MSG, "Failed to write to file");
     }
@@ -421,6 +481,22 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
       json["Settings"][index]["value"] = false;
       json["Settings"][index]["range"]["min"] = false;
       json["Settings"][index]["range"]["max"] = true;
+
+      if (serializeJson(json, settings_string) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to string");
+      }
+
+      if (serializeJson(json, settingsFile) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to file");
+      }
+    }
+    else if (typeStr == "String") {
+      Logger::log(WARN_MSG, "Creating String setting...");
+      json["Settings"][index]["name"] = name;
+      json["Settings"][index]["type"] = typeStr;
+      json["Settings"][index]["value"] = "";
+      json["Settings"][index]["range"]["min"] = "";
+      json["Settings"][index]["range"]["max"] = "";
 
       if (serializeJson(json, settings_string) == 0) {
         Logger::log(WARN_MSG, "Failed to write to string");

@@ -7,6 +7,7 @@
 #include "GpsInterface.h"
 #include "SDInterface.h"
 #include "settings.h"
+#include "Switches.h"
 #include "utils.h"
 #include "logger.h"
 
@@ -17,6 +18,9 @@ extern GpsInterface gps;
 extern SDInterface sd_obj;
 extern Settings settings;
 extern Utils utils;
+extern Switches u_btn;
+extern Switches d_btn;
+extern Switches c_btn;
 
 class UI {
   private:

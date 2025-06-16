@@ -50,7 +50,9 @@ bool SDInterface::initSD() {
 
       this->sd_files = new LinkedList<String>();
 
-      this->sd_files->add("Back");
+      //this->sd_files->add("Back");
+
+      this->update_bin_file = settings.loadSetting<String>("UpdateFile");
     
       return true;
   }
@@ -125,126 +127,178 @@ void SDInterface::listDir(String str_dir){
   }
 }
 
+String SDInterface::findFirstBinFile(const String& dirPath) {
+  File dir = SD.open(dirPath);
+  if (!dir || !dir.isDirectory()) {
+    return "";  // Not a valid directory
+  }
+
+  File entry;
+  while ((entry = dir.openNextFile())) {
+    if (!entry.isDirectory()) {
+      String filename = entry.name();
+      // If the file is in a subfolder, strip the path
+      int lastSlash = filename.lastIndexOf('/');
+      if (lastSlash != -1) {
+        filename = filename.substring(lastSlash + 1);
+      }
+      if (filename.endsWith(".bin")) {
+        entry.close();
+        dir.close();
+        return filename;
+      }
+    }
+    entry.close();
+  }
+
+  dir.close();
+  return "";  // No .bin file found
+}
+
 void SDInterface::runUpdate() {
-  #ifdef HAS_SCREEN
+  String bin_name = this->findFirstBinFile("/");
+
+  if (bin_name == "") {
+    Logger::log(STD_MSG, "No bin file found");
+    return;
+  }
+
+  if (bin_name == this->update_bin_file) {
+    Logger::log(STD_MSG, "No new bin file found");
+    return;
+  }
+  else {
+    Logger::log(WARN_MSG, "Found new bin file (" + bin_name + "). Updating...");
+    this->update_bin_file = bin_name;
+    settings.saveSetting<bool>(UPDATE_KEY, this->update_bin_file);
+  }
+
+  /*#ifdef HAS_SCREEN
     display_obj.tft.setTextWrap(false);
     display_obj.tft.setFreeFont(NULL);
     display_obj.tft.setCursor(0, TFT_HEIGHT / 3);
     display_obj.tft.setTextSize(1);
     display_obj.tft.setTextColor(TFT_WHITE);
   
-    display_obj.tft.println("/update.bin");
-  #endif
-  File updateBin = SD.open("/update.bin");
+    display_obj.tft.println(bin_name);
+  #endif*/
+
+  File updateBin = SD.open("/" + bin_name);
+
+  // Check if file is good
   if (updateBin) {
+    // Check if it is a directory first
     if(updateBin.isDirectory()){
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_RED);
         display_obj.tft.println("Error, could not find \"update.bin\"");
-      #endif
+      #endif*/
       Logger::log(WARN_MSG, "Error, could not find \"update.bin\"");
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_WHITE);
-      #endif
+      #endif*/
       updateBin.close();
       return;
     }
 
     size_t updateSize = updateBin.size();
 
+    // Check file size
     if (updateSize > 0) {
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.println("Starting update over SD. Please wait...");
-      #endif
+      #endif*/
       Logger::log(STD_MSG, "Starting update over SD. Please wait...");
       this->performUpdate(updateBin, updateSize);
     }
+    // File is empty
     else {
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_RED);
         display_obj.tft.println("Error, file is empty");
-      #endif
+      #endif*/
       Logger::log(WARN_MSG, "Error, file is empty");
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.setTextColor(TFT_WHITE);
-      #endif
+      #endif*/
       return;
     }
 
     updateBin.close();
     
       // whe finished remove the binary from sd card to indicate end of the process
-    #ifdef HAS_SCREEN
+    /*#ifdef HAS_SCREEN
       display_obj.tft.println("rebooting...");
-    #endif
+    #endif*/
     Logger::log(STD_MSG, "rebooting...");
     //SD.remove("/update.bin");      
     delay(1000);
     ESP.restart();
   }
+  // File was not good
   else {
-    #ifdef HAS_SCREEN
+    /*#ifdef HAS_SCREEN
       display_obj.tft.setTextColor(TFT_RED);
       display_obj.tft.println("Could not load update.bin from sd root");
-    #endif
+    #endif*/
     Logger::log(WARN_MSG, "Could not load update.bin from sd root");
-    #ifdef HAS_SCREEN
+    /*#ifdef HAS_SCREEN
       display_obj.tft.setTextColor(TFT_WHITE);
-    #endif
+    #endif*/
   }
 }
 
 void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
-  if (Update.begin(updateSize)) {   
-    #ifdef HAS_SCREEN
+  if (Update.begin(updateSize)) {
+    /*#ifdef HAS_SCREEN
       display_obj.tft.println(text_table2[5] + String(updateSize));
       display_obj.tft.println(F(text_table2[6]));
-    #endif
+    #endif*/
     size_t written = Update.writeStream(updateSource);
     if (written == updateSize) {
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.println("Written : " + String(written) + " successfully");
-      #endif
+      #endif*/
       Logger::log(STD_MSG, "Written : " + String(written) + " successfully");
     }
     else {
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.println("Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
-      #endif
+      #endif*/
       Logger::log(WARN_MSG, "Written only : " + String(written) + "/" + String(updateSize) + ". Retry?");
     }
     if (Update.end()) {
       Logger::log(STD_MSG, "OTA done!");
       if (Update.isFinished()) {
-        #ifdef HAS_SCREEN
+        /*#ifdef HAS_SCREEN
           display_obj.tft.println("Update successfully completed. Rebooting.");
-        #endif
+        #endif*/
         Logger::log(STD_MSG, "Update successfully completed. Rebooting.");
       }
       else {
-        #ifdef HAS_SCREEN
+        /*#ifdef HAS_SCREEN
           display_obj.tft.setTextColor(TFT_RED);
           display_obj.tft.println("Update not finished? Something went wrong!");
-        #endif
+        #endif*/
         Logger::log(WARN_MSG, "Update not finished? Something went wrong!");
-        #ifdef HAS_SCREEN
+        /*#ifdef HAS_SCREEN
           display_obj.tft.setTextColor(TFT_WHITE);
-        #endif
+        #endif*/
       }
     }
     else {
-      #ifdef HAS_SCREEN
+      /*#ifdef HAS_SCREEN
         display_obj.tft.println("Error Occurred. Error #: " + String(Update.getError()));
-      #endif
+      #endif*/
       Logger::log(WARN_MSG, "Error Occurred. Error #: " + String(Update.getError()));
     }
 
   }
   else
   {
-    #ifdef HAS_SCREEN
+    /*#ifdef HAS_SCREEN
       display_obj.tft.println("Not enough space to begin OTA");
-    #endif
+    #endif*/
     Logger::log(WARN_MSG, "Not enough space to begin OTA");
   }
 }
