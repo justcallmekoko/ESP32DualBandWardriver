@@ -27,6 +27,8 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
       wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
 
+      wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+
       bool do_save = false;
 
       if (gps.getFixStatus())
@@ -49,6 +51,14 @@ uint8_t WiFiOps::getCurrentScanMode() {
   return this->current_scan_mode;
 }
 
+void WiFiOps::setTotalNetCount(uint32_t count) {
+  this->total_net_count = count;
+}
+
+void WiFiOps::setTotalBLECount(uint32_t count) {
+  this->total_ble_count = count;
+}
+
 void WiFiOps::setCurrentNetCount(uint32_t count) {
   this->current_net_count = count;
 }
@@ -63,6 +73,14 @@ void WiFiOps::setCurrent5gCount(uint32_t count) {
 
 void WiFiOps::setCurrentBLECount(uint32_t count) {
   this->current_ble_count = count;
+}
+
+uint32_t WiFiOps::getTotalNetCount() {
+  return this->total_net_count;
+}
+
+uint32_t WiFiOps::getTotalBLECount() {
+  return this->total_ble_count;
 }
 
 uint32_t WiFiOps::getCurrentNetCount() {
@@ -152,6 +170,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
       this->save_mac(this_bssid_raw);
 
       this->setCurrentNetCount(this->getCurrentNetCount() + 1);
+
+      this->setTotalNetCount(this->getTotalNetCount() + 1);
 
       if (WiFi.channel(i) > 14)
         this->setCurrent5gCount(this->getCurrent5gCount() + 1);

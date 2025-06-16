@@ -77,7 +77,7 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
   display.tft->setTextColor(ST77XX_WHITE);
   display.tft->println(count5g);
 
-  display.tft->println();
+  //display.tft->println();
 
   display.tft->setTextColor(ST77XX_CYAN);
   display.tft->print("BLE: ");
@@ -87,7 +87,12 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
   display.tft->print(" | GPS Sats: ");
   display.tft->println(gpsSats > 0 ? String(gpsSats) : "No Fix");
 
-  display.tft->println();  
+  display.tft->println();
+
+  display.tft->print("Total Nets: ");
+  display.tft->println(wifi_ops.getTotalNetCount());
+  display.tft->print("Total BLE: ");
+  display.tft->println(wifi_ops.getTotalBLECount());
 }
 
 void UI::main(uint32_t currentTime) {
