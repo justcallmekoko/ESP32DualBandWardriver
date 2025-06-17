@@ -40,5 +40,13 @@ Logs are formatted for Wigle and saved to SD card.
 | `GPIO28` | `+` |
 | `GND`    | `-` |
 
+### User Buttons
+The User Buttons require pull-down resistors
+| ESP32-C5 | Button |
+| -------- | --- |
+| `GPIO8` | `DOWN` |
+| `GPIO9` | `UP` |
+| `GPIO15` | `SELECT` |
+
 ## Programming
 *to-do*
