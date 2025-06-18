@@ -25,31 +25,30 @@ void Display::begin() {
 
   tft->setRotation(3);
 
-  this->drawLogoCentered(logo, 90, 80);
+  this->drawMonochromeImage160x80(logo2, 160, 80);
 
   this->ctrlBacklight(true);
 }
 
-void Display::drawLogoCentered(const uint8_t* bitmap, int w, int h) {
-  const int rowSize = 12;       // Each row is padded to 4-byte boundary
-  const int dataOffset = 62;    // Start of bitmap pixel data
-
-  int x_offset = (160 - w) / 2;
-  int y_offset = (80 - h) / 2;
-
+// https://javl.github.io/image2cpp/
+void Display::drawMonochromeImage160x80(const uint8_t* imageData, int width, int height) {
   tft->startWrite();
 
-  for (int row = 0; row < h; row++) {
-      int y = y_offset + (h - 1 - row);  // BMP stores bottom-up
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      int byteIndex = (y * (width / 8)) + (x / 8);
+      uint8_t byteVal = pgm_read_byte(&imageData[byteIndex]);
 
-      for (int col = 0; col < w; col++) {
-          int byteIndex = dataOffset + row * rowSize + (col / 8);
-          uint8_t byteVal = pgm_read_byte(&bitmap[byteIndex]);
-          bool pixelOn = (byteVal >> (7 - (col % 8))) & 0x01;
+      // MSB first (bit 7 is leftmost pixel)
+      bool pixelOn = (byteVal >> (7 - (x % 8))) & 0x01;
+      uint16_t color = pixelOn ? ST77XX_WHITE : ST77XX_BLACK;
 
-          uint16_t color = pixelOn ? ST77XX_BLACK : ST77XX_WHITE;
-          tft->writePixel(x_offset + col, y, color);
-      }
+      // Adjust for rotation 3 (landscape)
+      int x_rot = x;
+      int y_rot = y;
+
+      tft->writePixel(x_rot, y_rot, color);
+    }
   }
 
   tft->endWrite();

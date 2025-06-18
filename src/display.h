@@ -16,9 +16,6 @@ extern BatteryInterface battery;
 
 class Display {
   public:
-    //Display();
-    //Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
-
     int _cs, _dc, _rst;
     Display(SPIClass* spi, int cs, int dc, int rst);
     Adafruit_ST7735* tft;
@@ -31,7 +28,7 @@ class Display {
   private:
     SPIClass* _spi;
 
-    void drawLogoCentered(const uint8_t* bitmap, int w, int h);
+    void drawMonochromeImage160x80(const uint8_t* imageData, int width, int height);
 
 };
 
