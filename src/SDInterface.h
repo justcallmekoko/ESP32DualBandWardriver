@@ -31,9 +31,15 @@ class SDInterface {
 
   private:
     //SPIClass *spiExt;
+    SPIClass* _spi;
+    int _cs;
+    String update_bin_file;
     bool checkDetectPin();
+    String findFirstBinFile(const String& dirPath);
 
   public:
+    SDInterface(SPIClass* spi, int cs);
+
     uint8_t cardType;
     uint64_t cardSizeMB;
     bool supported = false;

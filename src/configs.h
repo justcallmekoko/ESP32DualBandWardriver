@@ -6,17 +6,46 @@
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
-// BLE stuff
+//// BLE stuff
 #define BLE_SCAN_DURATION   1 * 1000 // 5 seconds
 
 
-// LED stuff
+//// LED stuff
 #define LED_PIN 28
 
 
-// Display stuff
+//// Display stuff
 #define ON  HIGH
 #define OFF LOW
+
+#define TFT_HEIGHT 80
+#define TFT_WIDTH  160
+
+#define TFT_SPI_SPEED 27000000
+
+#define TFT_CS   23
+#define TFT_DC   24
+#define TFT_RST  -1
+#define TOUCH_CS -1
+#define TFT_MOSI 7
+#define TFT_SCLK 6
+#define TFT_BL   27
+
+
+//// UI Stuff
+#define UI_UPDATE_TIME 1 * 1000 // 1 second
+
+#define U_BTN 9
+#define D_BTN 8
+#define C_BTN 15
+
+#define C_PULL false
+#define U_PULL false
+#define D_PULL false
+
+#define WEB_PAGE_TIMEOUT 60 * 1000 // 60 seconds
+#define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
+#define WIFI_CONFIG "/wifi_config.json"
 
 
 //// Buffer stuff
@@ -40,6 +69,8 @@
 #define SPI_MISO 2
 #define SPI_MOSI 7 
 #define SD_CS    10
+
+#define UPDATE_KEY "UpdateFile"
 
 
 //// Switch stuff

@@ -10,6 +10,9 @@
 #include "SDInterface.h"
 
 #include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 
@@ -21,6 +24,8 @@ extern Buffer buffer;
 extern Utils utils;
 extern Settings settings;
 
+extern WebServer server;
+
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
@@ -30,9 +35,19 @@ class WiFiOps
   private:
     NimBLEScan* pBLEScan;
 
+    const char* apSSID = "c5wardriver";
+    const char* apPassword = "c5wardriver";
+
     uint8_t current_scan_mode;
     uint32_t init_time;
     struct mac_addr mac_history[mac_history_len];
+
+    uint32_t current_net_count = 0;
+    uint32_t current_2g4_count = 0;
+    uint32_t current_5g_count = 0;
+    uint32_t current_ble_count = 0;
+    uint32_t total_net_count = 0;
+    uint32_t total_ble_count = 0;
 
     void initWiFi();
     void initBLE();
@@ -45,16 +60,37 @@ class WiFiOps
     String security_int_to_string(int security_type);
     void processWardrive(uint16_t networks);
     void startLog(String file_name);
+    void shutdownAccessPoint(bool ap_active = true);
+    bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
 
   public:
     uint mac_history_cursor = 0;
+    bool clientConnected = false;
+    bool serving = false;
+    uint32_t last_web_client_activity;
 
     bool begin();
     void main(uint32_t currentTime);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
+    void setTotalNetCount(uint32_t count);
+    void setTotalBLECount(uint32_t count);
+    void setCurrentNetCount(uint32_t count);
+    void setCurrent2g4Count(uint32_t count);
+    void setCurrent5gCount(uint32_t count);
+    void setCurrentBLECount(uint32_t count);
+    uint32_t getTotalNetCount();
+    uint32_t getTotalBLECount();
+    uint32_t getCurrentNetCount();
+    uint32_t getCurrent2g4Count();
+    uint32_t getCurrent5gCount();
+    uint32_t getCurrentBLECount();
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
+
+    void startAccessPoint();
+    void serveConfigPage();
+    bool monitorAP(unsigned long timeoutMs = WEB_PAGE_TIMEOUT);
 
 };
 

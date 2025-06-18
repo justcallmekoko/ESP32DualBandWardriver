@@ -8,16 +8,24 @@
 #include "Switches.h"
 #include "WiFiOps.h"
 #include "utils.h"
+#include "ui.h"
 #include "logger.h"
 
 Buffer buffer;
 Settings settings;
 GpsInterface gps;
 BatteryInterface battery;
-Display display;
-SDInterface sd_obj;
 WiFiOps wifi_ops;
 Utils utils;
+UI ui_obj;
+
+SPIClass sharedSPI(SPI);
+Display display = Display(&sharedSPI, TFT_CS, TFT_DC, TFT_RST);
+SDInterface sd_obj = SDInterface(&sharedSPI, SD_CS);
+
+Switches u_btn = Switches(U_BTN, 1000, U_PULL);
+Switches d_btn = Switches(D_BTN, 1000, D_PULL);
+Switches c_btn = Switches(C_BTN, 1000, C_PULL);
 
 void setup() {
   Serial.begin(115200);
@@ -25,8 +33,17 @@ void setup() {
   while (!Serial)
     delay(10);
 
+  // Do SPI stuff first
+  sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+
+  // Give SPI some time I guess
+  delay(100);
+
   // Init the display before SD
-  //display.begin();
+  display.begin();
+
+  // Give SD some time
+  delay(100);
 
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
@@ -45,6 +62,10 @@ void setup() {
   if(!sd_obj.initSD())
     Logger::log(WARN_MSG, "SD Card NOT Supported");
 
+  // Check for firmware updates now
+  Logger::log(STD_MSG, "Checking for firmware updates...");
+  sd_obj.runUpdate();
+
   // Init battery
   battery.RunSetup();
   battery.battery_level = battery.getBatteryLevel();
@@ -52,10 +73,13 @@ void setup() {
   // Init GPS
   gps.begin();
 
+  // Init wifi and bluetooth
   wifi_ops.begin();
 
-  Logger::log(GUD_MSG, "Initialization complete!");
+  // Init UI
+  ui_obj.begin();
 
+  Logger::log(GUD_MSG, "Initialization complete!");
 }
 
 void loop() {
@@ -69,6 +93,7 @@ void loop() {
   gps.main();
   sd_obj.main();
   buffer.save();
+  ui_obj.main(currentTime);
 
   if ((gps.getFixStatus()) && (sd_obj.supported))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);

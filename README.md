@@ -4,6 +4,18 @@ Logs are formatted for Wigle and saved to SD card.
 
 ## Connections
 
+### [Display](https://a.co/d/dO8M3Ec)
+| ESP32-C5 | Display |
+| -------- | -- |
+| `3V3`    | `VCC` |
+| `GND`    | `GND` |
+| `GPIO6`  | `SCK` |
+| `GPIO7`  | `MOSI` |
+| `GPIO23` | `CS` |
+| `GPIO24` | `DC` |
+| `GPIO27` | `BL` |
+| `RST`    | `RST` |
+
 ### [GPS](https://a.co/d/hIqIitg)
 | ESP32-C5 | GPS |
 | -------- | --- |
@@ -27,6 +39,14 @@ Logs are formatted for Wigle and saved to SD card.
 | -------- | --- |
 | `GPIO28` | `+` |
 | `GND`    | `-` |
+
+### User Buttons
+The User Buttons require pull-down resistors
+| ESP32-C5 | Button |
+| -------- | --- |
+| `GPIO8` | `DOWN` |
+| `GPIO9` | `UP` |
+| `GPIO15` | `SELECT` |
 
 ## Programming
 *to-do*

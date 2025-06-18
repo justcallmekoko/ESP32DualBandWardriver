@@ -3,10 +3,12 @@
 
 #include <FS.h>
 #include <LinkedList.h>
-#include <TFT_eSPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
 #include <functional>
 
 #include "configs.h"
+#include "assets.h"
 
 #include "BatteryInterface.h"
 
@@ -14,8 +16,9 @@ extern BatteryInterface battery;
 
 class Display {
   public:
-    Display();
-    TFT_eSPI tft = TFT_eSPI();
+    int _cs, _dc, _rst;
+    Display(SPIClass* spi, int cs, int dc, int rst);
+    Adafruit_ST7735* tft;
 
     void begin();
     void main(uint32_t currentTime);
@@ -23,6 +26,9 @@ class Display {
     void ctrlBacklight(bool on = true);
 
   private:
+    SPIClass* _spi;
+
+    void drawMonochromeImage160x80(const uint8_t* imageData, int width, int height);
 
 };
 
