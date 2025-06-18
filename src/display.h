@@ -8,6 +8,7 @@
 #include <functional>
 
 #include "configs.h"
+#include "assets.h"
 
 #include "BatteryInterface.h"
 
@@ -29,6 +30,8 @@ class Display {
 
   private:
     SPIClass* _spi;
+
+    void drawLogoCentered(const uint8_t* bitmap, int w, int h);
 
 };
 

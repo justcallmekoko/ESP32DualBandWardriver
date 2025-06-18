@@ -25,12 +25,34 @@ void Display::begin() {
 
   tft->setRotation(3);
 
-  //tft.drawCentreString(DEVICE_NAME, TFT_WIDTH / 2, TFT_HEIGHT * 0.33, 1);
-  //tft.drawCentreString("JCMK", TFT_WIDTH / 2, TFT_HEIGHT * 0.5, 1);
-  //tft.drawCentreString(FIRMWARE_VERSION, TFT_WIDTH / 2, TFT_HEIGHT * 0.66, 1);
-  tft->println("JCMK C5 Wardriver");
+  this->drawLogoCentered(logo, 90, 80);
 
   this->ctrlBacklight(true);
+}
+
+void Display::drawLogoCentered(const uint8_t* bitmap, int w, int h) {
+  const int rowSize = 12;       // Each row is padded to 4-byte boundary
+  const int dataOffset = 62;    // Start of bitmap pixel data
+
+  int x_offset = (160 - w) / 2;
+  int y_offset = (80 - h) / 2;
+
+  tft->startWrite();
+
+  for (int row = 0; row < h; row++) {
+      int y = y_offset + (h - 1 - row);  // BMP stores bottom-up
+
+      for (int col = 0; col < w; col++) {
+          int byteIndex = dataOffset + row * rowSize + (col / 8);
+          uint8_t byteVal = pgm_read_byte(&bitmap[byteIndex]);
+          bool pixelOn = (byteVal >> (7 - (col % 8))) & 0x01;
+
+          uint16_t color = pixelOn ? ST77XX_BLACK : ST77XX_WHITE;
+          tft->writePixel(x_offset + col, y, color);
+      }
+  }
+
+  tft->endWrite();
 }
 
 void Display::ctrlBacklight(bool on) {
