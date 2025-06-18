@@ -43,6 +43,10 @@
 #define U_PULL false
 #define D_PULL false
 
+#define WEB_PAGE_TIMEOUT 60 * 1000 // 60 seconds
+#define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
+#define WIFI_CONFIG "/wifi_config.json"
+
 
 //// Buffer stuff
 #define BUF_SIZE 2 * 1024

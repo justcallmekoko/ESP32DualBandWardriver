@@ -1,5 +1,7 @@
 #include "WiFiOps.h"
 
+WebServer server(80);
+
 // Add compiler.c.elf.extra_flags=-Wl,-zmuldefs to platform.txt
 extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32_t arg3){
   if (arg == 31337)
@@ -355,11 +357,232 @@ void WiFiOps::initBLE() {
   pBLEScan->setMaxResults(0);                // Prevent storing results in NimBLEScanResults
 }
 
+bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
+  // Check if file exists
+  if (!SPIFFS.exists(WIFI_CONFIG)) {
+    Logger::log(WARN_MSG, "No saved WiFi config found.");
+    return false;
+  }
+
+  // Check if can open file
+  File configFile = SPIFFS.open(WIFI_CONFIG, "r");
+  if (!configFile) {
+    Logger::log(WARN_MSG, "Failed to open config file.");
+    return false;
+  }
+
+  // Get json object ready
+  DynamicJsonDocument doc(256);
+  DeserializationError error = deserializeJson(doc, configFile);
+  configFile.close();
+
+  // Couldn't parse json from file
+  if (error) {
+    Logger::log(WARN_MSG, "Failed to parse config file.");
+    return false;
+  }
+
+  // Extract AP credentials
+  const char* ssid = doc["ssid"];
+  const char* password = doc["password"];
+
+  Logger::log(STD_MSG, "Attempting to connect with: ");
+  Logger::log(STD_MSG, ssid);
+
+  // Connect to WiFi with AP credentials
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  // Wait while we connect
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  // Output status of connection attempt
+  if (WiFi.status() == WL_CONNECTED) {
+    Logger::log(GUD_MSG, "WiFi connected!");
+    Logger::log(GUD_MSG, "IP address: ");
+    Serial.println(WiFi.localIP());
+    return true;
+  } else {
+    Logger::log(WARN_MSG, "Failed to connect to WiFi.");
+    WiFi.disconnect(true);
+    return false;
+  }
+}
+
+void WiFiOps::startAccessPoint() {
+  WiFi.softAP(this->apSSID, this->apPassword);
+  Logger::log(GUD_MSG, "Access Point started");
+  Logger::log(GUD_MSG, "IP: ");
+  Logger::log(GUD_MSG, WiFi.softAPIP().toString());
+}
+
+void WiFiOps::serveConfigPage() {
+  server.on("/", HTTP_GET, [this]() {
+    this->last_web_client_activity = millis();
+    String html = R"rawliteral(
+      <html><body>
+      <h2>WiFi Configuration</h2>
+      <form action="/save" method="POST">
+        SSID: <input type="text" name="ssid"><br>
+        Password: <input type="password" name="password"><br>
+        <input type="submit" value="Save"><br><br>
+      </form>
+      <h2>Files on SD Card</h2>
+    )rawliteral";
+
+    File root = SD.open("/");
+    if (root && root.isDirectory()) {
+      File file = root.openNextFile();
+      while (file) {
+        if (!file.isDirectory()) {
+          String filename = file.name();
+          html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a><br>\n";
+        }
+        file = root.openNextFile();
+      }
+    } else {
+      html += "Unable to access SD card.<br>";
+    }
+
+    html += "</body></html>";
+    server.send(200, "text/html", html);
+  });
+
+  server.on("/save", HTTP_POST, [this]() {
+    this->last_web_client_activity = millis();
+    if (server.hasArg("ssid") && server.hasArg("password")) {
+      String ssid = server.arg("ssid");
+      String password = server.arg("password");
+
+      DynamicJsonDocument doc(256);
+      doc["ssid"] = ssid;
+      doc["password"] = password;
+
+      File configFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
+      if (configFile) {
+        serializeJson(doc, configFile);
+        configFile.close();
+        server.send(200, "text/html", "Credentials saved. You can close this window.");
+        this->last_web_client_activity = 0;
+        this->shutdownAccessPoint();
+      } else {
+        server.send(500, "text/plain", "Failed to save credentials.");
+      }
+    } else {
+      server.send(400, "text/plain", "Missing SSID or password.");
+    }
+  });
+
+  server.on("/download", HTTP_GET, [this]() {
+    this->last_web_client_activity = millis();
+    if (!server.hasArg("file")) {
+      server.send(400, "text/plain", "Missing file parameter.");
+      return;
+    }
+
+    String path = server.arg("file");
+    Logger::log(GUD_MSG, "User downloading: " + path);
+    if (!SD.exists("/" + path)) {
+      server.send(404, "text/plain", "File not found.");
+      return;
+    }
+
+    File downloadFile = SD.open("/" + path, FILE_READ);
+    if (downloadFile) {
+      server.sendHeader("Content-Disposition", "attachment; filename=\"" + path + "\"");
+      server.streamFile(downloadFile, "application/octet-stream");
+    }
+    else
+      Logger::log(GUD_MSG, "Failed to open file: " + path);
+    downloadFile.close();
+  });
+
+  server.begin();
+}
+
+bool WiFiOps::monitorAP(unsigned long timeoutMs) {
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    delay(100);
+    if (WiFi.softAPgetStationNum() > 0) {
+      Logger::log(GUD_MSG, "Client connected.");
+      return true;
+    }
+  }
+
+  Logger::log(STD_MSG, "Timeout reached with no client.");
+  shutdownAccessPoint();
+  return false;
+}
+
+void WiFiOps::shutdownAccessPoint(bool ap_active) {
+  if ((ap_active) && (WiFi.status() != WL_CONNECTED))
+    Logger::log(STD_MSG, "Shutting down Access Point and Web Server...");
+  else
+    Logger::log(STD_MSG, "Shutting down Web Server...");
+
+  server.stop();
+  if (ap_active) {
+    if (WiFi.status() != WL_CONNECTED)
+      WiFi.softAPdisconnect(true);  // true = wipe SSID/password
+  }
+  delay(100);  // small delay for stability
+
+  this->serving = false;
+}
+
 bool WiFiOps::begin() {
   this->current_scan_mode = WIFI_STANDBY;
 
   // Init WiFi
   this->initWiFi();
+
+  // Run Admin stuff and wait for clients first
+  bool connected = this->tryConnectToWiFi();
+
+  if (!connected)
+    this->startAccessPoint();
+
+  this->serveConfigPage();
+
+  this->serving = true;
+
+  if (!connected) {
+    if (this->monitorAP()) {
+      while (true) {
+        server.handleClient();
+
+        static bool wasConnected = WiFi.softAPgetStationNum() > 0;
+        bool nowConnected = WiFi.softAPgetStationNum() > 0;
+
+        if (wasConnected && !nowConnected) {
+          Logger::log(STD_MSG, "Client disconnected.");
+          this->shutdownAccessPoint();
+          break;
+        }
+
+        wasConnected = nowConnected;
+      }
+    }
+  } else {
+    this->last_web_client_activity = millis();
+
+    while (this->serving) {
+      server.handleClient();
+
+      if (millis() - this->last_web_client_activity > WEB_PAGE_TIMEOUT) {
+        Logger::log(STD_MSG, "Web client activity timeout");
+        Logger::log(STD_MSG, "Shutting down server and resuming normal function...");
+        this->shutdownAccessPoint(false);
+        break;
+      }
+    }
+  }
+
 
   // Init NimBLE
   this->initBLE();
