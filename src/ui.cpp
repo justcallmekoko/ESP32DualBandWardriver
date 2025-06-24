@@ -68,22 +68,22 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
     display.tft->println("Status: SCANNING\n");
 
 
-  display.tft->setTextColor(ST77XX_GREEN);
+  //display.tft->setTextColor(ST77XX_GREEN);
   display.tft->print("2.4GHz: ");
-  display.tft->setTextColor(ST77XX_WHITE);
+  //display.tft->setTextColor(ST77XX_WHITE);
   display.tft->print(count2g4);
   display.tft->print(" | ");
 
-  display.tft->setTextColor(ST77XX_GREEN);
+  //display.tft->setTextColor(ST77XX_GREEN);
   display.tft->print("5GHz: ");
-  display.tft->setTextColor(ST77XX_WHITE);
+  //display.tft->setTextColor(ST77XX_WHITE);
   display.tft->println(count5g);
 
   //display.tft->println();
 
-  display.tft->setTextColor(ST77XX_CYAN);
+  //display.tft->setTextColor(ST77XX_CYAN);
   display.tft->print("BLE: ");
-  display.tft->setTextColor(ST77XX_WHITE);
+  //display.tft->setTextColor(ST77XX_WHITE);
   display.tft->print(bleCount);
 
   display.tft->print(" | GPS Sats: ");
@@ -91,9 +91,13 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
 
   display.tft->println();
 
+  display.tft->setTextColor(ST77XX_GREEN);
   display.tft->print("Total Nets: ");
+  display.tft->setTextColor(ST77XX_WHITE);
   display.tft->println(wifi_ops.getTotalNetCount());
+  display.tft->setTextColor(ST77XX_CYAN);
   display.tft->print("Total BLE: ");
+  display.tft->setTextColor(ST77XX_WHITE);
   display.tft->println(wifi_ops.getTotalBLECount());
 }
 
