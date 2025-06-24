@@ -10,18 +10,14 @@
 #include "SD.h"
 #include "SPI.h"
 #include "Buffer.h"
-#ifdef HAS_SCREEN
-  #include "Display.h"
-#endif
+#include "Display.h"
 #include "utils.h"
 #include "logger.h"
 #include <Update.h>
 
 extern Buffer buffer;
 extern Settings settings;
-#ifdef HAS_SCREEN
-  extern Display display_obj;
-#endif
+extern Display display;
 
 #ifdef KIT
   #define SD_DET 4

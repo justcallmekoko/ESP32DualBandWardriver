@@ -358,16 +358,23 @@ void WiFiOps::initBLE() {
 }
 
 bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
+
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+
   // Check if file exists
   if (!SPIFFS.exists(WIFI_CONFIG)) {
     Logger::log(WARN_MSG, "No saved WiFi config found.");
     return false;
   }
 
+  display.tft->print("Joining WiFi: ");
+
   // Check if can open file
   File configFile = SPIFFS.open(WIFI_CONFIG, "r");
   if (!configFile) {
     Logger::log(WARN_MSG, "Failed to open config file.");
+    display.tft->println("\nCould not get WiFi creds file");
     return false;
   }
 
@@ -379,6 +386,7 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
   // Couldn't parse json from file
   if (error) {
     Logger::log(WARN_MSG, "Failed to parse config file.");
+    display.tft->println("\nCould not parse WiFi creds");
     return false;
   }
 
@@ -388,6 +396,8 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
 
   Logger::log(STD_MSG, "Attempting to connect with: ");
   Logger::log(STD_MSG, ssid);
+  display.tft->print(ssid);
+  display.tft->println("...");
 
   // Connect to WiFi with AP credentials
   WiFi.mode(WIFI_STA);
@@ -402,22 +412,35 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
 
   // Output status of connection attempt
   if (WiFi.status() == WL_CONNECTED) {
+    display.clearScreen();
+    display.tft->setCursor(0, 0);
+    display.tft->print("Connected: ");
+    display.tft->println(ssid);
+    display.tft->print("IP: ");
+    display.tft->println(WiFi.localIP());
     Logger::log(GUD_MSG, "WiFi connected!");
     Logger::log(GUD_MSG, "IP address: ");
     Serial.println(WiFi.localIP());
     return true;
   } else {
     Logger::log(WARN_MSG, "Failed to connect to WiFi.");
+    display.tft->println("Failed to connect");
     WiFi.disconnect(true);
     return false;
   }
 }
 
 void WiFiOps::startAccessPoint() {
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+  display.tft->print("Starting AP: ");
+  display.tft->println(this->apSSID);
   WiFi.softAP(this->apSSID, this->apPassword);
   Logger::log(GUD_MSG, "Access Point started");
   Logger::log(GUD_MSG, "IP: ");
   Logger::log(GUD_MSG, WiFi.softAPIP().toString());
+  display.tft->print("IP: ");
+  display.tft->println(WiFi.softAPIP().toString());
 }
 
 void WiFiOps::serveConfigPage() {
@@ -507,6 +530,7 @@ void WiFiOps::serveConfigPage() {
 bool WiFiOps::monitorAP(unsigned long timeoutMs) {
   unsigned long start = millis();
   while (millis() - start < timeoutMs) {
+    this->showCountdown();
     delay(100);
     if (WiFi.softAPgetStationNum() > 0) {
       Logger::log(GUD_MSG, "Client connected.");
@@ -535,6 +559,18 @@ void WiFiOps::shutdownAccessPoint(bool ap_active) {
   this->serving = false;
 }
 
+void WiFiOps::showCountdown() {
+  if (millis() - this->last_timer > TIMER_UPDATE) {
+    this->last_timer = millis();
+    display.tft->fillRect(0, SMALL_CHAR_HEIGHT * 2, TFT_WIDTH, TFT_HEIGHT - (SMALL_CHAR_HEIGHT * 2), ST77XX_BLACK);
+    display.tft->setCursor(0, SMALL_CHAR_HEIGHT * 4);
+    display.tft->println("Wardring starts...\n");
+    display.tft->setTextSize(2);
+    display.tft->println(60 - ((millis() - this->last_web_client_activity) / 1000));
+    display.tft->setTextSize(1);
+  }
+}
+
 bool WiFiOps::begin() {
   this->current_scan_mode = WIFI_STANDBY;
 
@@ -544,13 +580,18 @@ bool WiFiOps::begin() {
   // Run Admin stuff and wait for clients first
   bool connected = this->tryConnectToWiFi();
 
-  if (!connected)
+  if (!connected) {
+    delay(1000);
     this->startAccessPoint();
+  }
 
   this->serveConfigPage();
 
   this->serving = true;
 
+  this->last_web_client_activity = millis();
+
+  // Run AP loop
   if (!connected) {
     if (this->monitorAP()) {
       while (true) {
@@ -568,11 +609,13 @@ bool WiFiOps::begin() {
         wasConnected = nowConnected;
       }
     }
-  } else {
-    this->last_web_client_activity = millis();
+  } else { // Or run web server loop
+    this->last_timer = millis();
 
     while (this->serving) {
       server.handleClient();
+
+      this->showCountdown();
 
       if (millis() - this->last_web_client_activity > WEB_PAGE_TIMEOUT) {
         Logger::log(STD_MSG, "Web client activity timeout");

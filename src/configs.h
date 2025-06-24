@@ -7,7 +7,7 @@
 
 
 //// BLE stuff
-#define BLE_SCAN_DURATION   1 * 1000 // 5 seconds
+#define BLE_SCAN_DURATION   1 * 1000 // 1 second
 
 
 //// LED stuff
@@ -44,8 +44,11 @@
 #define D_PULL false
 
 #define WEB_PAGE_TIMEOUT 60 * 1000 // 60 seconds
+#define TIMER_UPDATE 1 * 1000 // 1 second
 #define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
 #define WIFI_CONFIG "/wifi_config.json"
+
+#define SMALL_CHAR_HEIGHT 8
 
 
 //// Buffer stuff

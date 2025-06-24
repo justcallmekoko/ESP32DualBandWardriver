@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "GpsInterface.h"
 #include "Buffer.h"
+#include "Display.h"
 #include "SDInterface.h"
 
 #include <WiFi.h>
@@ -23,6 +24,7 @@ extern SDInterface sd_obj;
 extern Buffer buffer;
 extern Utils utils;
 extern Settings settings;
+extern Display display;
 
 extern WebServer server;
 
@@ -49,6 +51,7 @@ class WiFiOps
     uint32_t total_net_count = 0;
     uint32_t total_ble_count = 0;
 
+    void showCountdown();
     void initWiFi();
     void initBLE();
     void deinitWiFi();
@@ -68,6 +71,7 @@ class WiFiOps
     bool clientConnected = false;
     bool serving = false;
     uint32_t last_web_client_activity;
+    uint32_t last_timer;
 
     bool begin();
     void main(uint32_t currentTime);
