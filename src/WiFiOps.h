@@ -12,12 +12,14 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 
-#include <NimBLEDevice.h>
+#include <NimBLEDevice.h> // 2.3.0
 
 extern GpsInterface gps;
 extern SDInterface sd_obj;
@@ -39,6 +41,11 @@ class WiFiOps
 
     const char* apSSID = "c5wardriver";
     const char* apPassword = "c5wardriver";
+
+    String user_ap_ssid = "";
+    String user_ap_password = "";
+    String wigle_user = "";
+    String wigle_token = "";
 
     uint8_t current_scan_mode;
     uint32_t init_time;

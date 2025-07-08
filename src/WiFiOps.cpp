@@ -393,6 +393,10 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
   // Extract AP credentials
   const char* ssid = doc["ssid"];
   const char* password = doc["password"];
+  this->user_ap_ssid = doc["ssid"].as<String>();
+  this->user_ap_password = doc["password"].as<String>();
+  this->wigle_user = doc["wigle_user"].as<String>();
+  this->wigle_token = doc["wigle_token"].as<String>();
 
   Logger::log(STD_MSG, "Attempting to connect with: ");
   Logger::log(STD_MSG, ssid);
@@ -452,6 +456,8 @@ void WiFiOps::serveConfigPage() {
       <form action="/save" method="POST">
         SSID: <input type="text" name="ssid"><br>
         Password: <input type="password" name="password"><br>
+        WiGLE API Name: <input type="text" name="wigle_user"><br>
+        WiGLE API Token: <input type="password" name="wigle_token"><br>
         <input type="submit" value="Save"><br><br>
       </form>
       <h2>Files on SD Card</h2>
@@ -463,7 +469,12 @@ void WiFiOps::serveConfigPage() {
       while (file) {
         if (!file.isDirectory()) {
           String filename = file.name();
-          html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a><br>\n";
+          if (filename.endsWith(".log")) {
+            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> | ";
+            html += "<a href=\"/upload?file=" + filename + "\">Upload to WiGLE</a><br>";
+          } else {
+            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a><br>";
+          }
         }
         file = root.openNextFile();
       }
@@ -477,13 +488,58 @@ void WiFiOps::serveConfigPage() {
 
   server.on("/save", HTTP_POST, [this]() {
     this->last_web_client_activity = millis();
-    if (server.hasArg("ssid") && server.hasArg("password")) {
-      String ssid = server.arg("ssid");
-      String password = server.arg("password");
+    if ((server.hasArg("ssid") && server.hasArg("password")) || (server.hasArg("wigle_user") && server.hasArg("wigle_token"))) {
+      //String ssid = server.arg("ssid");
+      //String password = server.arg("password");
 
       DynamicJsonDocument doc(256);
-      doc["ssid"] = ssid;
-      doc["password"] = password;
+      //doc["ssid"] = ssid;
+      //doc["password"] = password;
+
+      if (server.hasArg("ssid")) {
+        if (server.arg("ssid") != "") {
+          doc["ssid"] = server.arg("ssid");
+          this->user_ap_ssid = server.arg("ssid");
+        } else {
+          doc["ssid"] = this->user_ap_ssid;
+        }
+      } else {
+        doc["ssid"] = this->user_ap_ssid;
+      }
+      if (server.hasArg("password")) {
+        if (server.arg("password") != "") {
+          doc["password"] = server.arg("password");
+          this->user_ap_password = server.arg("password");
+        } else {
+          doc["password"] = this->user_ap_password;
+        }
+      } else {
+        doc["password"] = this->user_ap_password;
+      }
+      if (server.hasArg("wigle_user")) {
+        if (server.arg("wigle_user") != "") {
+          doc["wigle_user"] = server.arg("wigle_user");
+          this->wigle_user = server.arg("wigle_user");
+        }
+        else {
+          doc["wigle_user"] = this->wigle_user;
+        }
+      } else {
+        doc["wigle_user"] = this->wigle_user;
+      }
+      if (server.hasArg("wigle_token")) {
+        if (server.arg("wigle_token") != "") {
+          doc["wigle_token"] = server.arg("wigle_token");
+          this->wigle_token = server.arg("wigle_token");
+        } else {
+          doc["wigle_token"] = this->wigle_token;
+        }
+      } else {
+        doc["wigle_token"] = this->wigle_token;
+      }
+
+      Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
+      Logger::log(STD_MSG, "Wigle User: " + this->wigle_user);
 
       File configFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
       if (configFile) {
@@ -522,6 +578,102 @@ void WiFiOps::serveConfigPage() {
     else
       Logger::log(GUD_MSG, "Failed to open file: " + path);
     downloadFile.close();
+  });
+
+  server.on("/upload", HTTP_GET, [this]() {
+    if (!server.hasArg("file")) {
+      server.send(400, "text/plain", "Missing file parameter.");
+      return;
+    }
+
+    String filePath = "/" + server.arg("file");
+    if (!SD.exists(filePath)) {
+      server.send(404, "text/plain", "File not found.");
+      return;
+    }
+
+    File fileToUpload = SD.open(filePath);
+    if (!fileToUpload) {
+      server.send(500, "text/plain", "Failed to open file.");
+      return;
+    }
+
+    // Load credentials
+    File configFile = SPIFFS.open(WIFI_CONFIG, "r");
+    DynamicJsonDocument doc(512);
+    deserializeJson(doc, configFile);
+    configFile.close();
+
+    String username = doc["wigle_user"] | "";
+    String token = doc["wigle_token"] | "";
+    if (username.isEmpty() || token.isEmpty()) {
+      fileToUpload.close();
+      server.send(500, "text/plain", "Missing WiGLE credentials.");
+      return;
+    }
+
+    String boundary = "----ESP32BOUNDARY";
+    String contentType = "multipart/form-data; boundary=" + boundary;
+
+    // Build parts
+    String part1 = "--" + boundary + "\r\n";
+    part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filePath + "\"\r\n";
+    part1 += "Content-Type: application/octet-stream\r\n\r\n";
+
+    String part2 = "\r\n--" + boundary + "\r\n";
+    part2 += "Content-Disposition: form-data; name=\"donate\"\r\n\r\non\r\n";
+
+    String part3 = "--" + boundary + "--\r\n";
+
+    int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
+
+    // Connect manually via WiFiClientSecure
+    WiFiClientSecure *client = new WiFiClientSecure();
+    client->setInsecure();
+
+    if (!client->connect("api.wigle.net", 443)) {
+      fileToUpload.close();
+      delete client;
+      server.send(500, "text/plain", "Failed to connect to wigle.net.");
+      return;
+    }
+
+    // Compose headers
+    String auth = utils.base64Encode(username + ":" + token);
+    client->println("POST /api/v2/file/upload HTTP/1.1");
+    client->println("Host: api.wigle.net");
+    client->println("User-Agent: ESP32Uploader/1.0");
+    client->println("Accept: application/json");
+    client->println("Authorization: Basic " + auth);
+    client->println("Content-Type: " + contentType);
+    client->print("Content-Length: ");
+    client->println(totalLength);
+    client->println();
+
+    // Send body
+    client->print(part1);
+    while (fileToUpload.available()) {
+      client->write(fileToUpload.read());
+    }
+    client->print(part2);
+    client->print(part3);
+
+    fileToUpload.close();
+
+    // Read response
+    String response;
+    unsigned long timeout = millis();
+    while (client->connected() && millis() - timeout < 5000) {
+      while (client->available()) {
+        response += client->readStringUntil('\n');
+      }
+    }
+    client->stop();
+    delete client;
+
+    Serial.println("WiGLE response:");
+    Serial.println(response);
+    server.send(200, "text/plain", "Upload complete. Response:\n" + response);
   });
 
   server.begin();
