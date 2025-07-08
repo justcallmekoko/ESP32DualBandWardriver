@@ -10,6 +10,7 @@
 #include "configs.h"
 
 #include "esp_heap_caps.h"
+#include "mbedtls/base64.h"
 
 struct mac_addr {
    unsigned char bytes[6];
@@ -170,6 +171,7 @@ class Utils {
     String replaceOUIWithManufacturer(const char *sta_addr);
     IPAddress getNextIP(IPAddress currentIP, IPAddress subnetMask);
     uint16_t getNextPort(uint16_t port);
+    String base64Encode(const String& input);
 };
 
 #endif

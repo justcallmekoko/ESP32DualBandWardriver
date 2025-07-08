@@ -242,3 +242,11 @@ IPAddress Utils::getNextIP(IPAddress currentIP, IPAddress subnetMask) {
 uint16_t Utils::getNextPort(uint16_t port) {
   return port + 1;
 }
+
+String Utils::base64Encode(const String& input) {
+  size_t outputLen;
+  unsigned char output[256];
+  mbedtls_base64_encode(output, sizeof(output), &outputLen,
+                        (const unsigned char*)input.c_str(), input.length());
+  return String((char*)output).substring(0, outputLen);
+}
