@@ -41,8 +41,8 @@ void UI::printBatteryLevel(int8_t batteryLevel) {
     }
 }
 
-void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4, uint32_t count5g, uint32_t bleCount, int gpsSats, int8_t batteryLevel) {
-  if (currentTime - lastUpdateTime < UI_UPDATE_TIME) return;
+void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4, uint32_t count5g, uint32_t bleCount, int gpsSats, int8_t batteryLevel, bool do_now) {
+  if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now)) return;
   lastUpdateTime = currentTime;
 
   display.tft->setRotation(3);  // Landscape mode
@@ -51,54 +51,68 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
   display.tft->setTextColor(ST77XX_WHITE);
   display.tft->setTextSize(1);
 
-  //display.tft->print("WiFi: ");
-  //display.tft->print(wifiCount);
-
   this->printFirmwareVersion();
   this->printBatteryLevel(batteryLevel);
 
-  display.tft->setCursor(0, 0);
+  if (this->stat_display_mode == FULL_STATS) {
 
-  for (int i = 0; i < 2; i++)
+    display.tft->setCursor(0, 0);
+
+    for (int i = 0; i < 2; i++)
+      display.tft->println();
+
+    if (wifi_ops.getCurrentScanMode() == WIFI_STANDBY)
+      display.tft->println("Status: STANDBY\n");
+    else if (wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING)
+      display.tft->println("Status: SCANNING\n");
+
+
+    display.tft->print("2.4GHz: ");
+    display.tft->print(count2g4);
+    display.tft->print(" | ");
+    display.tft->print("5GHz: ");
+    display.tft->println(count5g);
+
+    display.tft->print("BLE: ");
+    display.tft->print(bleCount);
+    display.tft->print(" | GPS Sats: ");
+    display.tft->println(gpsSats > 0 ? String(gpsSats) : "No Fix");
+
     display.tft->println();
 
-  if (wifi_ops.getCurrentScanMode() == WIFI_STANDBY)
-    display.tft->println("Status: STANDBY\n");
-  else if (wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING)
-    display.tft->println("Status: SCANNING\n");
+    display.tft->setTextColor(ST77XX_GREEN);
+    display.tft->print("Total Nets: ");
+    display.tft->setTextColor(ST77XX_WHITE);
+    display.tft->println(wifi_ops.getTotalNetCount());
+    display.tft->setTextColor(CYAN);
+    display.tft->print("Total BLE: ");
+    display.tft->setTextColor(ST77XX_WHITE);
+    display.tft->println(wifi_ops.getTotalBLECount());
+    display.tft->setTextColor(ST77XX_WHITE);
+  }
+  else if (this->stat_display_mode == GLANCE_STATS) {
+    for (int i = 0; i < 2; i++)
+      display.tft->println();
 
+    display.tft->print("GPS Sats: ");
+    display.tft->println(gpsSats > 0 ? String(gpsSats) : "No Fix");
 
-  //display.tft->setTextColor(ST77XX_GREEN);
-  display.tft->print("2.4GHz: ");
-  //display.tft->setTextColor(ST77XX_WHITE);
-  display.tft->print(count2g4);
-  display.tft->print(" | ");
+    display.tft->setTextSize(2);
 
-  //display.tft->setTextColor(ST77XX_GREEN);
-  display.tft->print("5GHz: ");
-  //display.tft->setTextColor(ST77XX_WHITE);
-  display.tft->println(count5g);
+    display.tft->println();
 
-  //display.tft->println();
-
-  //display.tft->setTextColor(ST77XX_CYAN);
-  display.tft->print("BLE: ");
-  //display.tft->setTextColor(ST77XX_WHITE);
-  display.tft->print(bleCount);
-
-  display.tft->print(" | GPS Sats: ");
-  display.tft->println(gpsSats > 0 ? String(gpsSats) : "No Fix");
-
-  display.tft->println();
-
-  display.tft->setTextColor(ST77XX_GREEN);
-  display.tft->print("Total Nets: ");
-  display.tft->setTextColor(ST77XX_WHITE);
-  display.tft->println(wifi_ops.getTotalNetCount());
-  display.tft->setTextColor(ST77XX_CYAN);
-  display.tft->print("Total BLE: ");
-  display.tft->setTextColor(ST77XX_WHITE);
-  display.tft->println(wifi_ops.getTotalBLECount());
+    display.tft->setTextColor(ST77XX_GREEN);
+    //display.tft->print("Total Nets: ");
+    //display.tft->setTextColor(ST77XX_WHITE);
+    display.tft->println(wifi_ops.getTotalNetCount());
+    display.tft->setTextColor(CYAN);
+    //display.tft->print("Total BLE: ");
+    //display.tft->setTextColor(ST77XX_WHITE);
+    display.tft->println(wifi_ops.getTotalBLECount());
+    display.tft->setTextColor(ST77XX_WHITE);
+    
+    display.tft->setTextSize(1);
+  }
 }
 
 void UI::main(uint32_t currentTime) {
@@ -113,11 +127,44 @@ void UI::main(uint32_t currentTime) {
       battery.getBatteryLevel()
     );
 
-  if (u_btn.justPressed())
-    Logger::log(STD_MSG, "U_BTN Pressed: " + (String)millis());
+  if (u_btn.justPressed()) {
+    if (this->stat_display_mode >= MAX_DISPLAY_MODES - 1)
+      this->stat_display_mode = 0;
+    else
+      this->stat_display_mode++;
 
-  if (d_btn.justPressed())
-    Logger::log(STD_MSG, "D_BTN Pressed: " + (String)millis());
+    if ((wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING) || (wifi_ops.getCurrentScanMode() == WIFI_STANDBY))
+      this->updateStats(
+        currentTime,
+        wifi_ops.getCurrentNetCount(),
+        wifi_ops.getCurrent2g4Count(),
+        wifi_ops.getCurrent5gCount(),
+        wifi_ops.getCurrentBLECount(),
+        gps.getNumSats(),
+        battery.getBatteryLevel(),
+        true
+      );
+  }
+
+  if (d_btn.justPressed()) {
+    if (this->stat_display_mode <= 0)
+      this->stat_display_mode = MAX_DISPLAY_MODES - 1;
+    else
+      this->stat_display_mode--;
+
+    if ((wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING) || (wifi_ops.getCurrentScanMode() == WIFI_STANDBY))
+      this->updateStats(
+        currentTime,
+        wifi_ops.getCurrentNetCount(),
+        wifi_ops.getCurrent2g4Count(),
+        wifi_ops.getCurrent5gCount(),
+        wifi_ops.getCurrentBLECount(),
+        gps.getNumSats(),
+        battery.getBatteryLevel(),
+        true
+      );
+  }
+
 
   if (c_btn.justPressed())
     Logger::log(STD_MSG, "C_BTN Pressed: " + (String)millis());

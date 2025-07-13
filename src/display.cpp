@@ -15,7 +15,11 @@ void Display::begin() {
   this->ctrlBacklight(false);
 
   //tft.init();
-  tft->initR(INITR_MINI160x80_PLUGIN);
+  #ifndef JCMK_HOST_BOARD
+    tft->initR(INITR_MINI160x80_PLUGIN);
+  #else
+    tft->initR(INITR_MINI160x80);
+  #endif
 
   tft->setSPISpeed(TFT_SPI_SPEED);
 

@@ -469,11 +469,11 @@ void WiFiOps::serveConfigPage() {
       while (file) {
         if (!file.isDirectory()) {
           String filename = file.name();
-          if (filename.endsWith(".log")) {
+          if ((filename.endsWith(".log")) && (this->connected_as_client)) {
             html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> | ";
-            html += "<a href=\"/upload?file=" + filename + "\">Upload to WiGLE</a><br>";
+            html += "<a href=\"/upload?file=" + filename + "\">Upload to WiGLE</a> " + (String)file.size() + " Bytes <br>";
           } else {
-            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a><br>";
+            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> " + (String)file.size() + " Bytes <br>";
           }
         }
         file = root.openNextFile();
@@ -583,18 +583,21 @@ void WiFiOps::serveConfigPage() {
   server.on("/upload", HTTP_GET, [this]() {
     if (!server.hasArg("file")) {
       server.send(400, "text/plain", "Missing file parameter.");
+      this->last_web_client_activity = millis();
       return;
     }
 
     String filePath = "/" + server.arg("file");
     if (!SD.exists(filePath)) {
       server.send(404, "text/plain", "File not found.");
+      this->last_web_client_activity = millis();
       return;
     }
 
     File fileToUpload = SD.open(filePath);
     if (!fileToUpload) {
       server.send(500, "text/plain", "Failed to open file.");
+      this->last_web_client_activity = millis();
       return;
     }
 
@@ -609,6 +612,7 @@ void WiFiOps::serveConfigPage() {
     if (username.isEmpty() || token.isEmpty()) {
       fileToUpload.close();
       server.send(500, "text/plain", "Missing WiGLE credentials.");
+      this->last_web_client_activity = millis();
       return;
     }
 
@@ -635,6 +639,7 @@ void WiFiOps::serveConfigPage() {
       fileToUpload.close();
       delete client;
       server.send(500, "text/plain", "Failed to connect to wigle.net.");
+      this->last_web_client_activity = millis();
       return;
     }
 
@@ -652,8 +657,12 @@ void WiFiOps::serveConfigPage() {
 
     // Send body
     client->print(part1);
+    const size_t BUFFER_SIZE = 4096; // 1KB at a time
+    uint8_t buffer[BUFFER_SIZE];
+
     while (fileToUpload.available()) {
-      client->write(fileToUpload.read());
+      size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
+      client->write(buffer, bytesRead);
     }
     client->print(part2);
     client->print(part3);
@@ -674,6 +683,7 @@ void WiFiOps::serveConfigPage() {
     Serial.println("WiGLE response:");
     Serial.println(response);
     server.send(200, "text/plain", "Upload complete. Response:\n" + response);
+    this->last_web_client_activity = millis();
   });
 
   server.begin();
@@ -723,59 +733,65 @@ void WiFiOps::showCountdown() {
   }
 }
 
-bool WiFiOps::begin() {
+bool WiFiOps::begin(bool skip_admin) {
   this->current_scan_mode = WIFI_STANDBY;
 
   // Init WiFi
   this->initWiFi();
 
-  // Run Admin stuff and wait for clients first
-  bool connected = this->tryConnectToWiFi();
+  if (!skip_admin) {
+    // Run Admin stuff and wait for clients first
+    bool connected = this->tryConnectToWiFi();
 
-  if (!connected) {
-    delay(1000);
-    this->startAccessPoint();
-  }
+    this->connected_as_client = connected;
 
-  this->serveConfigPage();
+    if (!connected) {
+      delay(1000);
+      this->startAccessPoint();
+    }
 
-  this->serving = true;
+    this->serveConfigPage();
 
-  this->last_web_client_activity = millis();
+    this->serving = true;
 
-  // Run AP loop
-  if (!connected) {
-    if (this->monitorAP()) {
-      while (true) {
+    this->last_web_client_activity = millis();
+
+    // Run AP loop
+    if (!connected) {
+      if (this->monitorAP()) {
+        while (true) {
+          server.handleClient();
+
+          static bool wasConnected = WiFi.softAPgetStationNum() > 0;
+          bool nowConnected = WiFi.softAPgetStationNum() > 0;
+
+          if (wasConnected && !nowConnected) {
+            Logger::log(STD_MSG, "Client disconnected.");
+            this->shutdownAccessPoint();
+            break;
+          }
+
+          wasConnected = nowConnected;
+        }
+      }
+    } else { // Or run web server loop
+      this->last_timer = millis();
+
+      while (this->serving) {
         server.handleClient();
 
-        static bool wasConnected = WiFi.softAPgetStationNum() > 0;
-        bool nowConnected = WiFi.softAPgetStationNum() > 0;
+        this->showCountdown();
 
-        if (wasConnected && !nowConnected) {
-          Logger::log(STD_MSG, "Client disconnected.");
-          this->shutdownAccessPoint();
+        if (millis() - this->last_web_client_activity > WEB_PAGE_TIMEOUT) {
+          Logger::log(STD_MSG, "Web client activity timeout");
+          Logger::log(STD_MSG, "Shutting down server and resuming normal function...");
+          this->shutdownAccessPoint(false);
           break;
         }
-
-        wasConnected = nowConnected;
       }
     }
-  } else { // Or run web server loop
-    this->last_timer = millis();
 
-    while (this->serving) {
-      server.handleClient();
-
-      this->showCountdown();
-
-      if (millis() - this->last_web_client_activity > WEB_PAGE_TIMEOUT) {
-        Logger::log(STD_MSG, "Web client activity timeout");
-        Logger::log(STD_MSG, "Shutting down server and resuming normal function...");
-        this->shutdownAccessPoint(false);
-        break;
-      }
-    }
+    this->connected_as_client = false;
   }
 
 

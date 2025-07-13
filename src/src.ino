@@ -74,7 +74,7 @@ void setup() {
   gps.begin();
 
   // Init wifi and bluetooth
-  wifi_ops.begin();
+  wifi_ops.begin(c_btn.justPressed());
 
   // Init UI
   ui_obj.begin();
