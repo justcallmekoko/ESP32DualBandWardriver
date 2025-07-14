@@ -14,6 +14,12 @@
 
 extern BatteryInterface battery;
 
+#ifdef JCMK_HOST_BOARD
+  #define CYAN 0xFFE0
+#else
+  #define CYAN ST77XX_CYAN
+#endif
+
 class Display {
   public:
     int _cs, _dc, _rst;

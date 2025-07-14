@@ -1,6 +1,8 @@
 #ifndef configs_h
 #define configs_h
 
+#define JCMK_HOST_BOARD
+
 //// Firmware info stuff
 #define FIRMWARE_VERSION "v0.1.0"
 #define DEVICE_NAME      "JCMK C5 Wardriver"

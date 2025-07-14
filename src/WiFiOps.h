@@ -47,6 +47,8 @@ class WiFiOps
     String wigle_user = "";
     String wigle_token = "";
 
+    bool connected_as_client = false;
+
     uint8_t current_scan_mode;
     uint32_t init_time;
     struct mac_addr mac_history[mac_history_len];
@@ -80,7 +82,7 @@ class WiFiOps
     uint32_t last_web_client_activity;
     uint32_t last_timer;
 
-    bool begin();
+    bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
