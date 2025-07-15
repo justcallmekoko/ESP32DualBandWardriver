@@ -14,6 +14,7 @@ Logs are formatted for Wigle and saved to SD card.
 - [Update Firmware](#update-firmware)
 
 ## Connections
+**IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you much remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly**
 
 ### [Display](https://a.co/d/dO8M3Ec)
 | ESP32-C5 | Display |
@@ -60,7 +61,12 @@ The User Buttons require pull-down resistors
 | `GPIO15` | `SELECT` |
 
 ## Programming
-*to-do*
+1. Clone this repo
+2. In your workstation CLI, navigate to the `C5_Py_Flasher` directory
+3. With your ESP32-C5 device unplugged, execute `python c5_flasher.py` and allow any missing python packages to install
+4. Once you see `Waiting for ESP32-C5 device to be connected...`, connect your ESP32-C5 device to your PC via USB-C cable
+5. Once you see `Ready to flash these files to ESP32-C5? (y/N):`, enter `y` and allow the firmware to flash
+6. When the `Hardware reset` message appears on the screen, you may disconnect your ESP32-C5 device
 
 ## Usage
 
