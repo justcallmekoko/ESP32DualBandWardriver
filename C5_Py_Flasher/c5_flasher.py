@@ -7,17 +7,7 @@ import platform   # Placeholder for possible OS checks
 import glob
 import time
 import shutil
-import serial.tools.list_ports
-import esptool
-from colorama import Fore, Style
 import argparse
-
-# Dependency check and install if needed
-REQUIRED_PACKAGES = [
-    'pyserial',
-    'esptool',
-    'colorama'
-]
 
 def ensure_package(pkg):
     try:
@@ -25,6 +15,26 @@ def ensure_package(pkg):
     except ImportError:
         print(f"Installing missing package: {pkg}")
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', pkg])
+
+try:
+    import serial.tools.list_ports
+except ImportError:
+    ensure_package('pyserial')
+try:
+    import esptool
+except ImportError:
+    ensure_package('esptool')
+try:
+    from colorama import Fore, Style
+except ImportError:
+    ensure_package('colorama')
+
+# Dependency check and install if needed
+REQUIRED_PACKAGES = [
+    'pyserial',
+    'esptool',
+    'colorama'
+]
 
 def ensure_requirements():
     for pkg in REQUIRED_PACKAGES:
