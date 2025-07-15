@@ -9,9 +9,9 @@ Logs are formatted for Wigle and saved to SD card.
     - [SD Card](#sd-card)
     - [Activity LED](#activity-led)
     - [User Buttons](#user-buttons)
-- [Programming](#programming)
-- [Usage](#usage)
+- [Install Firmware](#install-firmware)
 - [Update Firmware](#update-firmware)
+- [Usage](#usage)
 
 ## Connections
 **IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you much remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly**
@@ -60,13 +60,21 @@ The User Buttons require pull-down resistors
 | `GPIO9` | `UP` |
 | `GPIO15` | `SELECT` |
 
-## Programming
+## Install Firmware
 1. Clone this repo
 2. In your workstation CLI, navigate to the `C5_Py_Flasher` directory
 3. With your ESP32-C5 device unplugged, execute `python c5_flasher.py` and allow any missing python packages to install
 4. Once you see `Waiting for ESP32-C5 device to be connected...`, connect your ESP32-C5 device to your PC via USB-C cable
 5. Once you see `Ready to flash these files to ESP32-C5? (y/N):`, enter `y` and allow the firmware to flash
 6. When the `Hardware reset` message appears on the screen, you may disconnect your ESP32-C5 device
+
+## Update Firmware
+The firmware update process is very simple once the initial install process is completed. The firmware is designed to check the attached SD card at every boot for a new bin file. If a new bin file is found, it uses it to automcatically execute an update. If an old bin file is found or no bin file is found, it resumes normal operation. 
+
+1. Download latest firmware from releases
+2. Place the .bin file on the root of your SD card
+3. Install your SD card into the C5 wardriver
+4. Boot the C5 wardriver and allow the automatic update process to execute
 
 ## Usage
 
@@ -81,11 +89,3 @@ At every boot, if the C5 Wardriver is able to connect to a WLAN using the user-p
 
 ### Buttons
 During normal wardriving operation, the `UP` and `DOWN` buttons may be used to switch between display modes for different presentation of the wardriving status and statistic information.
-
-## Update Firmware
-The firmware update process is very simple once the initial install process is completed. The firmware is designed to check the attached SD card at every boot for a new bin file. If a new bin file is found, it uses it to automcatically execute an update. If an old bin file is found or no bin file is found, it resumes normal operation. 
-
-1. Download latest firmware from releases
-2. Place the .bin file on the root of your SD card
-3. Install your SD card into the C5 wardriver
-4. Boot the C5 wardriver and allow the automatic update process to execute
