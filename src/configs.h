@@ -1,10 +1,30 @@
 #ifndef configs_h
 #define configs_h
 
+// Pins used:
+
+/*
+2
+4
+5
+6
+7
+8
+9
+10
+13
+14
+15
+23
+24
+27
+28
+*/
+
 #define JCMK_HOST_BOARD
 
 //// Firmware info stuff
-#define FIRMWARE_VERSION "v0.1.0"
+#define FIRMWARE_VERSION "v1.0.0"
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 
@@ -59,8 +79,9 @@
 
 
 //// Battery stuff
-#define I2C_SDA 25
-#define I2C_SCL 26
+#define HAS_BATTERY
+#define I2C_SCL 4
+#define I2C_SDA 5
 
 
 //// GPS stuff
