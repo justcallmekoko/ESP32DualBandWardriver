@@ -43,7 +43,7 @@ void BatteryInterface::RunSetup() {
 
     if (error == 0) {
       if (maxlipo.begin()) {
-        Logger::log(GUN_MSG, "Detected MAX17048");
+        Logger::log(GUD_MSG, "Detected MAX17048");
         this->has_max17048 = true;
         this->i2c_supported = true;
       }
