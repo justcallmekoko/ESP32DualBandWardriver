@@ -46,6 +46,15 @@ Logs are formatted for Wigle and saved to SD card.
 | `GPIO7`  | `MOSI` |
 | `GPIO10` | `CS` |
 
+### [Battery Fuel Gauge](https://www.adafruit.com/product/5580?srsltid=AfmBOorF18oKQ_UTmewFqWVfryc6hovloBa6APF5GGIUm1mz5bNJcq-2)
+| Board | ESP32-C5 | Button |
+| ----- | -------- | --- |
+|       | `GPIO4` | `SCL` |
+|       | `GPIO5` | `SDA` |
+|       | `3V3` | `VCC` |
+|       | `GND` | `GND` |
+| `Battery +` | | `BAT` |
+
 ### Activity LED
 | ESP32-C5 | LED |
 | -------- | --- |
