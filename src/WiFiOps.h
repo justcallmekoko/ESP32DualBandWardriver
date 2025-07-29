@@ -7,7 +7,7 @@
 #include "settings.h"
 #include "GpsInterface.h"
 #include "Buffer.h"
-#include "Display.h"
+#include "display.h"
 #include "SDInterface.h"
 
 #include <WiFi.h>
