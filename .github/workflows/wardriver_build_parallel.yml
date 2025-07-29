@@ -1,0 +1,200 @@
+name: Wardriver Build and Push Parallel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  pull_request:
+
+jobs:
+  compile_sketch:
+    name: build ${{ matrix.board.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - { name: "ESP32-C5-DevKitC-1",            flag: "C5_WARDRIVER",              fbqn: "esp32:esp32:esp32c5:PartitionScheme=min_spiffs",                                                file_name: "esp32c5devkitc1",         tft: false, tft_file: "",                                   build_dir: "esp32c5",                    addr: "0x2000",   idf_ver: "3.3.0",    nimble_ver: "2.3.0",    esp_async: "bigbrodude6119/ESPAsyncWebServer",     esp_async_ver: "master" }
+          
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+          
+      - name: Install Arduino CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin" >> $GITHUB_PATH
+          export PATH=$PATH:/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin
+          arduino-cli version
+
+      - name: Install Arduino-ESP32 Core v${{ matrix.board.idf_ver }}
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@${{ matrix.board.idf_ver }}
+
+      - name: Verify Installed Cores
+        run: arduino-cli core list
+
+      #- name: Build TestFile with ESP32 v${{ matrix.board.idf_ver }}
+      #  uses: ArminJo/arduino-test-compile@v3.2.1
+      #  with:
+      #    sketch-names: TestFile.ino
+      #    arduino-board-fqbn: esp32:esp32:esp32s2
+      #    arduino-platform: esp32:esp32@${{ matrix.board.idf_ver }}
+      #    platform-url: https://github.com/espressif/arduino-esp32/releases/download/${{ matrix.board.idf_ver }}/package_esp32_dev_index.json
+
+      #- name: Verify Installed Cores Again
+      #  run: arduino-cli core list
+          
+      - name: Show Arduino dir structure
+        run: |
+          find /home/runner/.arduino15/packages/esp32/hardware/
+                  
+      - name: Install AsyncTCP
+        uses: actions/checkout@v2
+        with:
+          repository: me-no-dev/AsyncTCP
+          ref: master
+          path: CustomAsyncTCP
+          
+      - name: Install MicroNMEA
+        uses: actions/checkout@v2
+        with:
+          repository: stevemarple/MicroNMEA
+          ref: v2.0.6
+          path: CustomMicroNMEA
+
+      - name: Install NimBLE-Arduino
+        uses: actions/checkout@v2
+        with:
+          repository: h2zero/NimBLE-Arduino
+          ref: ${{ matrix.board.nimble_ver }}
+          path: CustomNimBLE-Arduino
+
+      - name: Install ArduinoJson
+        uses: actions/checkout@v2
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: v6.18.2
+          path: CustomArduinoJson
+          
+      - name: Install LinkedList
+        uses: actions/checkout@v2
+        with:
+          repository: ivanseidel/LinkedList
+          ref: v1.3.3
+          path: CustomLinkedList
+          
+      - name: Install EspSoftwareSerial
+        uses: actions/checkout@v2
+        with:
+          repository: plerup/espsoftwareserial
+          ref: 8.1.0
+          path: CustomEspSoftwareSerial
+          
+      - name: Install Adafruit_BusIO
+        uses: actions/checkout@v2
+        with:
+          repository: adafruit/Adafruit_BusIO
+          ref: 1.15.0
+          path: CustomAdafruit_BusIO
+          
+      - name: Install Adafruit_MAX1704X
+        uses: actions/checkout@v2
+        with:
+          repository: adafruit/Adafruit_MAX1704X
+          ref: 1.0.2
+          path: CustomAdafruit_MAX1704X
+          
+      - name: Install Adafruit-GFX-Library
+        uses: actions/checkout@v2
+        with:
+          repository: adafruit/Adafruit-GFX-Library
+          ref: 1.12.1
+          path: CustomAdafruit-GFX-Library
+          
+      - name: Install Adafruit-ST7735-Library
+        uses: actions/checkout@v2
+        with:
+          repository: adafruit/Adafruit-ST7735-Library
+          ref: 1.11.0
+          path: CustomAdafruit-ST7735-Library
+          
+      - name: Install Adafruit_Seesaw
+        uses: actions/checkout@v2
+        with:
+          repository: adafruit/Adafruit_Seesaw
+          ref: 1.7.9
+          path: CustomAdafruit_Seesaw
+          
+      - name: Show Libraries
+        run: |
+          find /home/runner/ -name "Custom*"
+
+      - name: Install Esptool
+        run: |
+          pip install esptool
+
+      - name: Modify platform.txt
+        run: |
+          if [[ ${{ matrix.board.idf_ver }} == "2.0.11" ]]; then
+            for i in $(find /home/runner/.arduino15/packages/esp32/hardware/esp32/ -name "platform.txt"); do
+              sed -i 's/compiler.c.elf.libs.esp32c3=/compiler.c.elf.libs.esp32c3=-zmuldefs /' "$i"
+              sed -i 's/compiler.c.elf.libs.esp32s3=/compiler.c.elf.libs.esp32s3=-zmuldefs /' "$i"
+              sed -i 's/compiler.c.elf.libs.esp32s2=/compiler.c.elf.libs.esp32s2=-zmuldefs /' "$i"
+              sed -i 's/compiler.c.elf.libs.esp32=/compiler.c.elf.libs.esp32=-zmuldefs /' "$i"
+              cat "$i" | grep compiler.c.elf.libs.esp32c3
+              cat "$i" | grep compiler.c.elf.libs.esp32s3
+              cat "$i" | grep compiler.c.elf.libs.esp32s2
+              cat "$i" | grep compiler.c.elf.libs.esp32
+            done
+          fi
+          
+          if [[ ${{ matrix.board.idf_ver }} == "3.3.0" ]]; then
+            for i in $(find /home/runner/.arduino15/packages/esp32/hardware/esp32/ -name "platform.txt"); do
+              sed -i 's/compiler.c.elf.extra_flags=/compiler.c.elf.extra_flags=-Wl,-zmuldefs /' "$i"
+            done
+          fi
+
+      - name: Build C5 Wardriver for ${{ matrix.board.name }}
+        uses: ArminJo/arduino-test-compile@v3.3.0
+        with:
+          sketch-names: src.ino
+          arduino-board-fqbn: ${{ matrix.board.fbqn }}
+          extra-arduino-cli-args: "--warnings none --build-property compiler.cpp.extra_flags='-D${{ matrix.board.flag }}'"
+          arduino-platform: esp32:esp32@${{ matrix.board.idf_ver }}
+          platform-url: https://github.com/espressif/arduino-esp32/releases/download/${{ matrix.board.idf_ver }}/package_esp32_dev_index.json
+
+      - name: Rename C5 Wardriver ${{ matrix.board.name }} bin
+        run: |
+          mv ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.ino.bin ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.${{ matrix.board.file_name }}.bin
+
+      - name: Upload ${{ matrix.board.name }} Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: src.${{ matrix.board.file_name }}.bin
+          path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.${{ matrix.board.file_name }}.bin
+          retention-days: 5
+
+  post_compile_steps:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [compile_sketch]
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps: 
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "C5 Wardriver Release ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          files: |
+            src.*.bin

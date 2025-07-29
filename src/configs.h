@@ -15,8 +15,8 @@
 13
 14
 15
-23
-24
+23 TFT
+24 TFT
 27
 28
 */
@@ -59,7 +59,7 @@
 
 #define U_BTN 9
 #define D_BTN 8
-#define C_BTN 15
+#define C_BTN 1
 
 #define C_PULL false
 #define U_PULL false

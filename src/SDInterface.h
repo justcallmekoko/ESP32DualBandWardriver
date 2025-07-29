@@ -10,7 +10,7 @@
 #include "SD.h"
 #include "SPI.h"
 #include "Buffer.h"
-#include "Display.h"
+#include "display.h"
 #include "utils.h"
 #include "logger.h"
 #include <Update.h>
