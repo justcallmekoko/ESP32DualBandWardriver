@@ -13,7 +13,6 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32
 class scanCallbacks : public NimBLEScanCallbacks {
 
   void onDiscovered(const NimBLEAdvertisedDevice* advertisedDevice) override {
-
     extern WiFiOps wifi_ops;
 
     uint8_t macBytes[6];

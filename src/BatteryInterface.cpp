@@ -119,4 +119,6 @@ int8_t BatteryInterface::getBatteryLevel() {
     else
       return percent;
   }
+
+  return 0;
 }
