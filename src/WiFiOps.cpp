@@ -13,7 +13,6 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32
 class scanCallbacks : public NimBLEScanCallbacks {
 
   void onDiscovered(const NimBLEAdvertisedDevice* advertisedDevice) override {
-
     extern WiFiOps wifi_ops;
 
     uint8_t macBytes[6];
@@ -145,7 +144,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         delay(1);
 
       // Start a new scan on all channels
-      WiFi.scanNetworks(true, true, false, 110);
+      WiFi.scanNetworks(true, true, false, 80);
     }
   }
 
@@ -331,7 +330,12 @@ void WiFiOps::startLog(String file_name) {
   );
 }
 
-void WiFiOps::initWiFi() {
+void WiFiOps::initWiFi(bool set_country) {
+  if (set_country) {
+    esp_wifi_init(&cfg);
+    esp_wifi_set_country(&country);
+  }
+
   WiFi.STA.begin();
   WiFi.setBandMode(WIFI_BAND_MODE_AUTO);
   delay(100);
@@ -736,10 +740,10 @@ void WiFiOps::showCountdown() {
 bool WiFiOps::begin(bool skip_admin) {
   this->current_scan_mode = WIFI_STANDBY;
 
-  // Init WiFi
-  this->initWiFi();
-
   if (!skip_admin) {
+    // Init WiFi
+    this->initWiFi();
+
     // Run Admin stuff and wait for clients first
     bool connected = this->tryConnectToWiFi();
 
@@ -792,8 +796,11 @@ bool WiFiOps::begin(bool skip_admin) {
     }
 
     this->connected_as_client = false;
+
+    this->deinitWiFi();
   }
 
+  this->initWiFi(true);
 
   // Init NimBLE
   this->initBLE();

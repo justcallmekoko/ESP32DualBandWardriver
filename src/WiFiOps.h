@@ -39,6 +39,15 @@ class WiFiOps
   private:
     NimBLEScan* pBLEScan;
 
+    wifi_country_t country = {
+      .cc = "PH",
+      .schan = 1,
+      .nchan = 13,
+      .policy = WIFI_COUNTRY_POLICY_AUTO,
+    };
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+
     const char* apSSID = "c5wardriver";
     const char* apPassword = "c5wardriver";
 
@@ -61,7 +70,7 @@ class WiFiOps
     uint32_t total_ble_count = 0;
 
     void showCountdown();
-    void initWiFi();
+    void initWiFi(bool set_country = false);
     void initBLE();
     void deinitWiFi();
     void deinitBLE();
