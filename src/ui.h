@@ -24,8 +24,9 @@ extern Switches c_btn;
 
 #define FULL_STATS 0
 #define GLANCE_STATS 1
+#define SD_FILES 2
 
-#define MAX_DISPLAY_MODES 2
+#define MAX_DISPLAY_MODES 3
 
 struct MenuNode {
   String name;
@@ -42,6 +43,8 @@ struct Menu {
   LinkedList<MenuNode>* list;
   Menu                * parentMenu;
   uint16_t               selected = 0;
+  uint16_t               scroll_offset = 0;
+
 };
 
 class UI {
@@ -59,8 +62,13 @@ class UI {
     void addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected = false, String command = "");
     void setupSDFileList();
     void buildSDFileMenu();
+    void drawCurrentMenu();
+    void handleMenuNavigation();
 
   public:
+
+    Menu* current_menu = nullptr;
+
     void begin();
     void main(uint32_t currentTime);
 

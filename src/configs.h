@@ -29,7 +29,7 @@
 
 
 //// BLE stuff
-#define BLE_SCAN_DURATION   1 * 500 // 1 second
+#define BLE_SCAN_DURATION   1 * 1000 // 1 second
 
 
 //// LED stuff

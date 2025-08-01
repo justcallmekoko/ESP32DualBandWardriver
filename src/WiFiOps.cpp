@@ -800,7 +800,9 @@ bool WiFiOps::begin(bool skip_admin) {
     this->deinitWiFi();
   }
 
-  this->initWiFi(true);
+  //this->initWiFi(true);
+
+  this->initWiFi();
 
   // Init NimBLE
   this->initBLE();
