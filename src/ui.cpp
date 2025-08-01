@@ -11,19 +11,59 @@ void UI::begin() {
   action_menu.parentMenu = &sd_file_menu;
 
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
-    Logger::log(STD_MSG, "Back selected");
     this->current_menu = action_menu.parentMenu;
   });
   this->addNodes(&action_menu, "Upload", ST77XX_WHITE, NULL, 0, [this]() {
     Logger::log(STD_MSG, "Upload selected");
   });
   this->addNodes(&action_menu, "Delete", ST77XX_WHITE, NULL, 0, [this]() {
-    Logger::log(STD_MSG, "Delete selected");
+    if ("/" + sd_obj.selected_file_name == buffer.getFileName())
+      buffer.setFileName("");
+
+    if (sd_obj.removeFile("/" + sd_obj.selected_file_name)) {
+      Logger::log(STD_MSG, "Removed file: " + sd_obj.selected_file_name);
+
+      display.clearScreen();
+
+      this->drawCenteredText("File removed", true);
+    }
+    else {
+      Logger::log(STD_MSG, "Could not remove file");
+
+      display.clearScreen();
+
+      this->drawCenteredText("Could not remove file", true);
+    }
+
+    delay(2000);
+
+    this->buildSDFileMenu();
+
+    this->current_menu = &sd_file_menu;
   });
 
   this->current_menu = &sd_file_menu;
 
   this->init_time = millis();
+}
+
+void UI::drawCenteredText(String text, bool centerVertically) {
+  display.tft->setRotation(3);  // Landscape
+  display.tft->setTextSize(1);  // 6x8 per char
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->setTextWrap(false);
+
+  uint8_t charWidth = 6;
+  uint8_t charHeight = 8;
+
+  uint16_t textWidth = text.length() * charWidth;
+  uint16_t textHeight = charHeight;
+
+  uint16_t x = (TFT_WIDTH - textWidth) / 2;
+  uint16_t y = centerVertically ? (TFT_HEIGHT - textHeight) / 2 : 0;
+
+  display.tft->setCursor(x, y);
+  display.tft->print(text);
 }
 
 void UI::printFirmwareVersion() {
@@ -84,9 +124,14 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
       display.tft->println();
 
     if (wifi_ops.getCurrentScanMode() == WIFI_STANDBY)
-      display.tft->println("Status: STANDBY\n");
+      display.tft->println("Status: STANDBY");
     else if (wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING)
-      display.tft->println("Status: SCANNING\n");
+      display.tft->println("Status: SCANNING");
+
+    if (sd_obj.supported)
+      display.tft->println("File: " + buffer.getFileName());
+
+    display.tft->println();
 
 
     display.tft->print("2.4GHz: ");
@@ -158,6 +203,12 @@ void UI::buildSDFileMenu() {
 
   this->addNodes(&sd_file_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->stat_display_mode = 0;
+
+    if (buffer.getFileName() == "") {
+      Logger::log(STD_MSG, "Active log file was deleted. Creating new one...");
+      wifi_ops.startLog(LOG_FILE_NAME);
+      Logger::log(STD_MSG, "New log file: " + buffer.getFileName());
+    }
   });
 
   for (int i = 0; i < sd_obj.sd_files->size(); i++) {
@@ -171,10 +222,8 @@ void UI::buildSDFileMenu() {
   Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");
 }
 
-void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected, String command)
-{
+void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected, String command) {
   menu->list->add(MenuNode{name, false, color, place, selected, callable});
-  //menu->list->add(MenuNode{name, false, color, place, selected, callable});
 }
 
 void UI::drawCurrentMenu() {

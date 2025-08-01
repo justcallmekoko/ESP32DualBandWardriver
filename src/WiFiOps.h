@@ -80,7 +80,6 @@ class WiFiOps
     void clearMacHistory();
     String security_int_to_string(int security_type);
     void processWardrive(uint16_t networks);
-    void startLog(String file_name);
     void shutdownAccessPoint(bool ap_active = true);
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
 
@@ -93,6 +92,7 @@ class WiFiOps
 
     bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
+    void startLog(String file_name);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
     void setTotalNetCount(uint32_t count);

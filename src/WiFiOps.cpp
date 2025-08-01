@@ -807,7 +807,7 @@ bool WiFiOps::begin(bool skip_admin) {
   // Init NimBLE
   this->initBLE();
 
-  startLog("wardrive");
+  startLog(LOG_FILE_NAME);
   String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION + ",model=" + (String)DEVICE_NAME + ",release=" + (String)FIRMWARE_VERSION + ",device=" + (String)DEVICE_NAME + ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
   buffer.append(header_line + "\n");
   Logger::log(GUD_MSG, "Wigle Header: " + header_line);

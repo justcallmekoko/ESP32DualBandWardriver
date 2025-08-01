@@ -95,7 +95,7 @@ void loop() {
   buffer.save();
   ui_obj.main(currentTime);
 
-  if ((gps.getFixStatus()) && (sd_obj.supported))
+  if ((gps.getFixStatus()) && (sd_obj.supported) && (ui_obj.stat_display_mode != SD_FILES))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
   else
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);

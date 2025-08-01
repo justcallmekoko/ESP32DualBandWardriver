@@ -6,6 +6,7 @@
 #include "BatteryInterface.h"
 #include "GpsInterface.h"
 #include "SDInterface.h"
+#include "Buffer.h"
 #include "settings.h"
 #include "Switches.h"
 #include "utils.h"
@@ -16,6 +17,7 @@ extern Display display;
 extern BatteryInterface battery;
 extern GpsInterface gps;
 extern SDInterface sd_obj;
+extern Buffer buffer;
 extern Settings settings;
 extern Utils utils;
 extern Switches u_btn;
@@ -54,7 +56,6 @@ class UI {
 
     uint32_t init_time;
     uint32_t lastUpdateTime = 0;
-    uint8_t stat_display_mode = 0;
 
     void printFirmwareVersion();
     void printBatteryLevel(int8_t batteryLevel);
@@ -64,10 +65,13 @@ class UI {
     void buildSDFileMenu();
     void drawCurrentMenu();
     void handleMenuNavigation();
+    void drawCenteredText(String text, bool centerVertically = false);
 
   public:
 
     Menu* current_menu = nullptr;
+
+    uint8_t stat_display_mode = 0;
 
     void begin();
     void main(uint32_t currentTime);

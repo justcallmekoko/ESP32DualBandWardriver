@@ -4,21 +4,21 @@
 // Pins used:
 
 /*
-2
-4
-5
-6
-7
-8
-9
-10
-13
-14
-15
+1 BTN
+2 SPI
+4 BAT I2C
+5 BAT I2C
+6 SPI
+7 SPI
+8 BTN
+9 BTN
+10 SD CS
+13 GPS UART
+14 GPS UART
 23 TFT
 24 TFT
-27
-28
+27 TFT
+28 ACT LED
 */
 
 #define JCMK_HOST_BOARD
@@ -69,6 +69,7 @@
 #define TIMER_UPDATE 1 * 1000 // 1 second
 #define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
 #define WIFI_CONFIG "/wifi_config.json"
+#define LOG_FILE_NAME "wardrive"
 
 #define SMALL_CHAR_HEIGHT 8
 
