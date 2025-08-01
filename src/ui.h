@@ -27,8 +27,28 @@ extern Switches c_btn;
 
 #define MAX_DISPLAY_MODES 2
 
+struct MenuNode {
+  String name;
+  bool command;
+  uint8_t color;
+  uint8_t icon;
+  bool selected;
+  std::function<void()> callable;
+};
+
+// Full Menus
+struct Menu {
+  String name;
+  LinkedList<MenuNode>* list;
+  Menu                * parentMenu;
+  uint16_t               selected = 0;
+};
+
 class UI {
   private:
+    Menu sd_file_menu;
+    Menu action_menu;
+
     uint32_t init_time;
     uint32_t lastUpdateTime = 0;
     uint8_t stat_display_mode = 0;
@@ -36,6 +56,9 @@ class UI {
     void printFirmwareVersion();
     void printBatteryLevel(int8_t batteryLevel);
     void updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4, uint32_t count5g, uint32_t bleCount, int gpsSats, int8_t batteryLevel, bool do_now = false);
+    void addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected = false, String command = "");
+    void setupSDFileList();
+    void buildSDFileMenu();
 
   public:
     void begin();

@@ -119,7 +119,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
     if (scan_status == WIFI_SCAN_RUNNING) // Scan is still running
       delay(1);
     else if (scan_status == WIFI_SCAN_FAILED) { // Scan is failed or not started
-      WiFi.scanNetworks(true, true, false, 110);
+      WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
       delay(100);
       if (WiFi.scanComplete() == WIFI_SCAN_FAILED)
         Logger::log(WARN_MSG, "WiFi scan failed to start!");

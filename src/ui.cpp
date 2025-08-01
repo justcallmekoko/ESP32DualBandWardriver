@@ -1,6 +1,10 @@
 #include "ui.h"
 
 void UI::begin() {
+  sd_file_menu.list = new LinkedList<MenuNode>();
+
+  this->buildSDFileMenu();
+
   this->init_time = millis();
 }
 
@@ -113,6 +117,40 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
     
     display.tft->setTextSize(1);
   }
+}
+
+void UI::setupSDFileList() {
+  sd_obj.sd_files->clear();
+  delete sd_obj.sd_files;
+
+  sd_obj.sd_files = new LinkedList<String>();
+
+  //sd_obj.sd_files->add("Back");
+
+  sd_obj.listDirToLinkedList(sd_obj.sd_files, "/", ".log");
+}
+
+void UI::buildSDFileMenu() {
+  this->setupSDFileList();
+
+  this->sd_file_menu.list->clear();
+  delete this->sd_file_menu.list;
+  this->sd_file_menu.list = new LinkedList<MenuNode>();
+  this->sd_file_menu.name = "Logs";
+
+  for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+    this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
+      Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
+    });
+  }
+
+  Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");
+}
+
+void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected, String command)
+{
+  menu->list->add(MenuNode{name, false, color, place, selected, callable});
+  //menu->list->add(MenuNode{name, false, color, place, selected, callable});
 }
 
 void UI::main(uint32_t currentTime) {
