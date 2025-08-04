@@ -65,7 +65,6 @@ class UI {
     void buildSDFileMenu();
     void drawCurrentMenu();
     void handleMenuNavigation();
-    void drawCenteredText(String text, bool centerVertically = false);
 
   public:
 

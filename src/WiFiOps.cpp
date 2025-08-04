@@ -328,10 +328,16 @@ void WiFiOps::startLog(String file_name) {
     NULL,
     false // Set with commandline options
   );
+
+  String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION + ",model=" + (String)DEVICE_NAME + ",release=" + (String)FIRMWARE_VERSION + ",device=" + (String)DEVICE_NAME + ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
+  buffer.append(header_line + "\n");
+  Logger::log(GUD_MSG, "Wigle Header: " + header_line);
+
 }
 
 void WiFiOps::initWiFi(bool set_country) {
   if (set_country) {
+    Logger::log(STD_MSG, "Setting country code...");
     esp_wifi_init(&cfg);
     esp_wifi_set_country(&country);
   }
@@ -342,17 +348,40 @@ void WiFiOps::initWiFi(bool set_country) {
 }
 
 void WiFiOps::deinitWiFi() {
-  WiFi.disconnect(true);
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+
 }
 
 void WiFiOps::deinitBLE() {
-  pBLEScan->stop();
-  pBLEScan->clearResults();
+  Logger::log(STD_MSG, "Deinitializing BLE...");
+
+  if (pBLEScan != nullptr) {
+    if (pBLEScan->isScanning()) {
+      Logger::log(STD_MSG, "Stopping ongoing BLE scan...");
+      pBLEScan->stop();
+      while (pBLEScan->isScanning()) {
+        delay(10);  // Wait for scan to fully stop
+      }
+    }
+
+    // Clear results to release internal memory
+    Logger::log(STD_MSG, "Clearing scan results...");
+    pBLEScan->clearResults();
+
+    // Delete scan callbacks if dynamically allocated
+    Logger::log(STD_MSG, "Releasing scan callbacks...");
+    pBLEScan->setScanCallbacks(nullptr);
+  }
+
+  // Now safe to deinit BLE
   NimBLEDevice::deinit();
+  Logger::log(STD_MSG, "Finished deinitializing BLE");
 }
 
 void WiFiOps::initBLE() {
   NimBLEDevice::init("");
+  //delete pBLEScan;
   pBLEScan = NimBLEDevice::getScan();
 
   pBLEScan->setScanCallbacks(new scanCallbacks(), false);
@@ -365,6 +394,7 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
 
   display.clearScreen();
   display.tft->setCursor(0, 0);
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
 
   // Check if file exists
   if (!SPIFFS.exists(WIFI_CONFIG)) {
@@ -449,6 +479,157 @@ void WiFiOps::startAccessPoint() {
   Logger::log(GUD_MSG, WiFi.softAPIP().toString());
   display.tft->print("IP: ");
   display.tft->println(WiFi.softAPIP().toString());
+}
+
+bool WiFiOps::backendUpload(String filePath) {
+  //server.begin();
+
+  display.clearScreen();
+  display.drawCenteredText("Uploading...", true);
+
+  delay(100);
+
+  if (!SD.exists(filePath)) {
+      display.clearScreen();
+      display.drawCenteredText(filePath + " not found", true);
+      Logger::log(WARN_MSG, "File does not exist: " + filePath);
+      return false;
+    }
+
+    File fileToUpload = SD.open(filePath);
+    if (!fileToUpload) {
+      display.clearScreen();
+      display.drawCenteredText("Could not open file", true);
+      Logger::log(WARN_MSG, "Could not open file: " + filePath);
+      return false;
+    }
+
+    // Load credentials
+    File configFile = SPIFFS.open(WIFI_CONFIG, "r");
+    DynamicJsonDocument doc(512);
+    deserializeJson(doc, configFile);
+    configFile.close();
+
+    String username = doc["wigle_user"] | "";
+    String token = doc["wigle_token"] | "";
+    if (username.isEmpty() || token.isEmpty()) {
+      fileToUpload.close();
+      display.clearScreen();
+      display.drawCenteredText("No wigle creds", true);
+      Logger::log(WARN_MSG, "Missing wigle credentials");
+      return false;
+    }
+
+    Logger::log(STD_MSG, "Username: " + username);
+    Logger::log(STD_MSG, "Token: " + token);
+
+    String boundary = "----ESP32BOUNDARY";
+    String contentType = "multipart/form-data; boundary=" + boundary;
+
+    // Build parts
+    String part1 = "--" + boundary + "\r\n";
+    part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filePath + "\"\r\n";
+    part1 += "Content-Type: application/octet-stream\r\n\r\n";
+
+    String part2 = "\r\n--" + boundary + "\r\n";
+    part2 += "Content-Disposition: form-data; name=\"donate\"\r\n\r\non\r\n";
+
+    String part3 = "--" + boundary + "--\r\n";
+
+    int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
+
+    Logger::log(STD_MSG, "part1.length(): " + String(part1.length()));
+    Logger::log(STD_MSG, "fileToUpload.size(): " + String(fileToUpload.size()));
+    Logger::log(STD_MSG, "part2.length(): " + String(part2.length()));
+    Logger::log(STD_MSG, "part3.length(): " + String(part3.length()));
+    Logger::log(STD_MSG, "Total Content-Length: " + String(totalLength));
+
+    Serial.print("File size: ");
+    Serial.println(fileToUpload.size());
+
+    // Connect manually via WiFiClientSecure
+    //WiFiClientSecure *client = new WiFiClientSecure();
+    //client.stop();
+    client->setInsecure();
+
+    if (!client->connect("api.wigle.net", 443)) {
+      fileToUpload.close();
+      //delete client;
+      client->stop();
+      display.clearScreen();
+      display.drawCenteredText("Could not connect", true);
+      Logger::log(WARN_MSG, "Failed to connected to api.wigle.net");
+      return false;
+    }
+
+    Serial.println("Connected");
+
+    // Compose headers
+    String auth = utils.base64Encode(username + ":" + token);
+
+    Serial.println("Finished encoding");
+
+    client->println("POST /api/v2/file/upload HTTP/1.1");
+    client->println("Host: api.wigle.net");
+    client->println("User-Agent: ESP32Uploader/1.0");
+    client->println("Accept: application/json");
+    client->println("Authorization: Basic " + auth);
+    client->println("Content-Type: " + contentType);
+    client->print("Content-Length: ");
+    client->println(totalLength);
+    client->println();
+    delay(100);
+
+    Serial.println("Finished sending header");
+
+    // Send body
+    client->print(part1);
+    const size_t BUFFER_SIZE = 4096; // 1KB at a time
+    uint8_t buffer[BUFFER_SIZE];
+
+    Serial.println("Finished sending part1");
+
+    size_t totalBytesSent = 0;
+    while (fileToUpload.available()) {
+      size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
+      Serial.print("Writing ");
+      Serial.print(bytesRead);
+      Serial.println(" bytes...");
+      totalBytesSent += bytesRead;
+      client->write(buffer, bytesRead);
+    }
+
+    Logger::log(STD_MSG, "Uploaded file bytes: " + String(totalBytesSent));
+
+    client->print(part2);
+    client->print(part3);
+
+    Serial.println("Finished sending part2 and part3");
+
+    fileToUpload.close();
+
+
+    // Read response
+    String response;
+    unsigned long timeout = millis();
+    while (millis() - timeout < 5000) {
+      while (client->available()) {
+        char c = client->read();
+        response += c;
+      }
+    }
+
+    if (millis() - timeout > 5000)
+      Logger::log(WARN_MSG, "Timeout reached");
+    if (!client->connected())
+      Logger::log(WARN_MSG, "Client disconnected");
+      
+    client->stop();
+
+    Serial.println("WiGLE response:");
+    Serial.println(response);
+    
+    return true;
 }
 
 void WiFiOps::serveConfigPage() {
@@ -636,12 +817,13 @@ void WiFiOps::serveConfigPage() {
     int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
 
     // Connect manually via WiFiClientSecure
-    WiFiClientSecure *client = new WiFiClientSecure();
+    //WiFiClientSecure *client = new WiFiClientSecure();
     client->setInsecure();
 
     if (!client->connect("api.wigle.net", 443)) {
       fileToUpload.close();
-      delete client;
+      client->stop();
+      //delete client;
       server.send(500, "text/plain", "Failed to connect to wigle.net.");
       this->last_web_client_activity = millis();
       return;
@@ -682,7 +864,7 @@ void WiFiOps::serveConfigPage() {
       }
     }
     client->stop();
-    delete client;
+    //delete client;
 
     Serial.println("WiGLE response:");
     Serial.println(response);
@@ -754,6 +936,11 @@ bool WiFiOps::begin(bool skip_admin) {
       this->startAccessPoint();
     }
 
+    /*if (connected) {
+      Logger::log(STD_MSG, "Attempting upload...");
+      this->backendUpload("/wardrive_0.log");
+    }*/
+
     this->serveConfigPage();
 
     this->serving = true;
@@ -800,17 +987,12 @@ bool WiFiOps::begin(bool skip_admin) {
     this->deinitWiFi();
   }
 
-  //this->initWiFi(true);
-
   this->initWiFi();
 
   // Init NimBLE
-  this->initBLE();
+  this->initBLE(); // NimBLE needs to not be init in order to upload to wigle
 
   startLog(LOG_FILE_NAME);
-  String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION + ",model=" + (String)DEVICE_NAME + ",release=" + (String)FIRMWARE_VERSION + ",device=" + (String)DEVICE_NAME + ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
-  buffer.append(header_line + "\n");
-  Logger::log(GUD_MSG, "Wigle Header: " + header_line);
 
   this->init_time = millis();
 

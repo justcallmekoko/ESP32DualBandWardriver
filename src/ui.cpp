@@ -14,7 +14,27 @@ void UI::begin() {
     this->current_menu = action_menu.parentMenu;
   });
   this->addNodes(&action_menu, "Upload", ST77XX_WHITE, NULL, 0, [this]() {
-    Logger::log(STD_MSG, "Upload selected");
+    //wifi_ops.deinitWiFi();
+    //delay(10);
+    //wifi_ops.initWiFi();
+    //delay(10);
+
+    wifi_ops.deinitBLE();
+
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name)) {
+        display.clearScreen();
+        display.drawCenteredText("Upload complete", true);
+        buffer.setFileName("");
+      }
+    }
+    
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    wifi_ops.initBLE();
+    delay(2000);
   });
   this->addNodes(&action_menu, "Delete", ST77XX_WHITE, NULL, 0, [this]() {
     if ("/" + sd_obj.selected_file_name == buffer.getFileName())
@@ -25,14 +45,14 @@ void UI::begin() {
 
       display.clearScreen();
 
-      this->drawCenteredText("File removed", true);
+      display.drawCenteredText("File removed", true);
     }
     else {
       Logger::log(STD_MSG, "Could not remove file");
 
       display.clearScreen();
 
-      this->drawCenteredText("Could not remove file", true);
+      display.drawCenteredText("Could not remove file", true);
     }
 
     delay(2000);
@@ -45,25 +65,6 @@ void UI::begin() {
   this->current_menu = &sd_file_menu;
 
   this->init_time = millis();
-}
-
-void UI::drawCenteredText(String text, bool centerVertically) {
-  display.tft->setRotation(3);  // Landscape
-  display.tft->setTextSize(1);  // 6x8 per char
-  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  display.tft->setTextWrap(false);
-
-  uint8_t charWidth = 6;
-  uint8_t charHeight = 8;
-
-  uint16_t textWidth = text.length() * charWidth;
-  uint16_t textHeight = charHeight;
-
-  uint16_t x = (TFT_WIDTH - textWidth) / 2;
-  uint16_t y = centerVertically ? (TFT_HEIGHT - textHeight) / 2 : 0;
-
-  display.tft->setCursor(x, y);
-  display.tft->print(text);
 }
 
 void UI::printFirmwareVersion() {

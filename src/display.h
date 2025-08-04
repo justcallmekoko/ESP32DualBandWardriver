@@ -30,6 +30,7 @@ class Display {
     void main(uint32_t currentTime);
     void clearScreen();
     void ctrlBacklight(bool on = true);
+    void drawCenteredText(String text, bool centerVertically = false);
 
   private:
     SPIClass* _spi;
