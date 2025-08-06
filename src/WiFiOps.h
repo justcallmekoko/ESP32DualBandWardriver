@@ -51,6 +51,8 @@ class WiFiOps
     const char* apSSID = "c5wardriver";
     const char* apPassword = "c5wardriver";
 
+    WiFiClientSecure *client = new WiFiClientSecure();
+
     String user_ap_ssid = "";
     String user_ap_password = "";
     String wigle_user = "";
@@ -70,19 +72,13 @@ class WiFiOps
     uint32_t total_ble_count = 0;
 
     void showCountdown();
-    void initWiFi(bool set_country = false);
-    void initBLE();
-    void deinitWiFi();
-    void deinitBLE();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
     bool mac_cmp(struct mac_addr addr1, struct mac_addr addr2);
     void clearMacHistory();
     String security_int_to_string(int security_type);
     void processWardrive(uint16_t networks);
-    void startLog(String file_name);
     void shutdownAccessPoint(bool ap_active = true);
-    bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
 
   public:
     uint mac_history_cursor = 0;
@@ -93,6 +89,13 @@ class WiFiOps
 
     bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
+    void startLog(String file_name);
+    void initBLE();
+    void initWiFi(bool set_country = false);
+    void deinitBLE();
+    void deinitWiFi();
+    bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
+    bool backendUpload(String filePath);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
     void setTotalNetCount(uint32_t count);

@@ -5,6 +5,14 @@ Buffer::Buffer(){
   bufB = (uint8_t*)malloc(BUF_SIZE);
 }
 
+String Buffer::getFileName() {
+  return this->fileName;
+}
+
+void Buffer::setFileName(String file_name) {
+  this->fileName = file_name;
+}
+
 void Buffer::createFile(String name, bool is_pcap){
   int i=0;
   if (is_pcap) {

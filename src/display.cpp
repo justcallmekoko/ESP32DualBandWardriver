@@ -34,6 +34,25 @@ void Display::begin() {
   this->ctrlBacklight(true);
 }
 
+void Display::drawCenteredText(String text, bool centerVertically) {
+  tft->setRotation(3);  // Landscape
+  tft->setTextSize(1);  // 6x8 per char
+  tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft->setTextWrap(false);
+
+  uint8_t charWidth = 6;
+  uint8_t charHeight = 8;
+
+  uint16_t textWidth = text.length() * charWidth;
+  uint16_t textHeight = charHeight;
+
+  uint16_t x = (TFT_WIDTH - textWidth) / 2;
+  uint16_t y = centerVertically ? (TFT_HEIGHT - textHeight) / 2 : 0;
+
+  tft->setCursor(x, y);
+  tft->print(text);
+}
+
 // https://javl.github.io/image2cpp/
 void Display::drawMonochromeImage160x80(const uint8_t* imageData, int width, int height) {
   tft->startWrite();
