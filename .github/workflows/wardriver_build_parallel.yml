@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         board:
-          - { name: "ESP32-C5-DevKitC-1",            flag: "C5_WARDRIVER",              fbqn: "esp32:esp32:esp32c5:PartitionScheme=min_spiffs",                                                file_name: "esp32c5devkitc1",         tft: false, tft_file: "",                                   build_dir: "esp32c5",                    addr: "0x2000",   idf_ver: "3.3.0",    nimble_ver: "2.3.0",    esp_async: "bigbrodude6119/ESPAsyncWebServer",     esp_async_ver: "master" }
+          - { name: "ESP32-C5-DevKitC-1",            flag: "C5_WARDRIVER",              fbqn: "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled",                                                file_name: "esp32c5devkitc1",         tft: false, tft_file: "",                                   build_dir: "esp32c5",                    addr: "0x2000",   idf_ver: "3.3.0",    nimble_ver: "2.3.0",    esp_async: "bigbrodude6119/ESPAsyncWebServer",     esp_async_ver: "master" }
           
     steps:
       - name: Checkout Code
