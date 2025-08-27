@@ -37,6 +37,7 @@ struct MenuNode {
   uint8_t icon;
   bool selected;
   std::function<void()> callable;
+  uint32_t fileSize = 0;
 };
 
 // Full Menus
@@ -60,7 +61,7 @@ class UI {
     void printFirmwareVersion();
     void printBatteryLevel(int8_t batteryLevel);
     void updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4, uint32_t count5g, uint32_t bleCount, int gpsSats, int8_t batteryLevel, bool do_now = false);
-    void addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected = false, String command = "");
+    void addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, uint32_t size = 0, bool selected = false, String command = "");
     void setupSDFileList();
     void buildSDFileMenu();
     void drawCurrentMenu();

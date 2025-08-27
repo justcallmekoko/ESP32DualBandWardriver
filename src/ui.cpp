@@ -213,18 +213,19 @@ void UI::buildSDFileMenu() {
   });
 
   for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+    File current_file = sd_obj.getFile("/" + sd_obj.sd_files->get(i));
     this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
       sd_obj.selected_file_name = sd_obj.sd_files->get(i);
       Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
       this->current_menu = &action_menu;
-    });
+    }, current_file.size());
   }
 
   Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");
 }
 
-void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, bool selected, String command) {
-  menu->list->add(MenuNode{name, false, color, place, selected, callable});
+void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, uint32_t size, bool selected, String command) {
+  menu->list->add(MenuNode{name, false, color, place, selected, callable, size});
 }
 
 void UI::drawCurrentMenu() {
@@ -238,39 +239,51 @@ void UI::drawCurrentMenu() {
   display.tft->setTextSize(1);
   display.tft->setTextWrap(false);
 
-  // Draw menu name
   display.tft->setTextColor(ST77XX_WHITE);
   display.tft->setCursor(0, 0);
   display.tft->println(current_menu->name);
 
-  // Update scroll offset if selected is outside current view
+  // Update scroll offset
   if (current_menu->selected < current_menu->scroll_offset)
     current_menu->scroll_offset = current_menu->selected;
   else if (current_menu->selected >= current_menu->scroll_offset + max_visible_items)
     current_menu->scroll_offset = current_menu->selected - max_visible_items + 1;
 
-  // Draw visible menu items
+  // Draw visible items
   for (int i = 0; i < max_visible_items; i++) {
     int item_index = current_menu->scroll_offset + i;
     if (item_index >= current_menu->list->size()) break;
 
     MenuNode node = current_menu->list->get(item_index);
+    int y = header_height + i * 8;
 
-    int y = header_height + i * 8;  // 8 pixels per line
-    display.tft->setCursor(0, y);
-
+    // Handle selection color
     if (item_index == current_menu->selected) {
-      display.tft->setTextColor(ST77XX_BLACK, ST77XX_WHITE);  // Highlight
+      display.tft->setTextColor(ST77XX_BLACK, ST77XX_WHITE);
+      display.tft->setCursor(0, y);
       display.tft->print("> ");
     } else {
       display.tft->setTextColor(node.color, ST77XX_BLACK);
+      display.tft->setCursor(0, y);
       display.tft->print("  ");
     }
 
     display.tft->print(node.name);
+
+    String sizeStr = "";
+    if (node.fileSize > 0) {
+      sizeStr = String((node.fileSize + 1023) / 1024);  // Round up
+      sizeStr += " KB";
+    }
+
+    // Align file size to the right
+    int textPixelWidth = sizeStr.length() * 6;
+    int xRightAlign = TFT_WIDTH - textPixelWidth;
+    display.tft->setCursor(xRightAlign, y);
+    display.tft->print(sizeStr);
   }
 
-  // Optional: Draw ↑ and ↓ indicators if scrolling is available
+  // Scroll indicators
   if (current_menu->scroll_offset > 0) {
     display.tft->setCursor(TFT_WIDTH - 10, header_height);
     display.tft->setTextColor(ST77XX_WHITE);
