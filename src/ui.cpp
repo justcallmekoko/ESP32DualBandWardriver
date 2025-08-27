@@ -19,7 +19,7 @@ void UI::begin() {
     //wifi_ops.initWiFi();
     //delay(10);
 
-    wifi_ops.deinitBLE();
+    //wifi_ops.deinitBLE();
 
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
@@ -33,7 +33,7 @@ void UI::begin() {
     wifi_ops.deinitWiFi();
     delay(10);
     wifi_ops.initWiFi();
-    wifi_ops.initBLE();
+    //wifi_ops.initBLE();
     delay(2000);
   });
   this->addNodes(&action_menu, "Delete", ST77XX_WHITE, NULL, 0, [this]() {

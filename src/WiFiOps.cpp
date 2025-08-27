@@ -589,13 +589,22 @@ bool WiFiOps::backendUpload(String filePath) {
 
     Serial.println("Finished sending part1");
 
+    uint8_t percent_sent = 0;
+
+    String display_percent = "";
+
     size_t totalBytesSent = 0;
     while (fileToUpload.available()) {
       size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
-      Serial.print("Writing ");
-      Serial.print(bytesRead);
-      Serial.println(" bytes...");
       totalBytesSent += bytesRead;
+      Serial.print("Writing ");
+      Serial.print(totalBytesSent);
+      Serial.println(" bytes...");
+      percent_sent = (totalBytesSent * 100) / fileToUpload.size();
+      display.tft->drawRect(0, (TFT_HEIGHT / 3) * 2, TFT_WIDTH, TFT_HEIGHT, ST77XX_BLACK);
+      display.tft->setCursor(0, (TFT_HEIGHT / 3) * 2);
+      display_percent = (String)percent_sent + "%";
+      display.drawCenteredText(display_percent, false);
       client->write(buffer, bytesRead);
     }
 

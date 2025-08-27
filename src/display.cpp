@@ -47,7 +47,7 @@ void Display::drawCenteredText(String text, bool centerVertically) {
   uint16_t textHeight = charHeight;
 
   uint16_t x = (TFT_WIDTH - textWidth) / 2;
-  uint16_t y = centerVertically ? (TFT_HEIGHT - textHeight) / 2 : 0;
+  uint16_t y = centerVertically ? (TFT_HEIGHT - textHeight) / 2 : tft->getCursorY();
 
   tft->setCursor(x, y);
   tft->print(text);
