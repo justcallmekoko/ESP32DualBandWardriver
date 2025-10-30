@@ -14,13 +14,6 @@ void UI::begin() {
     this->current_menu = action_menu.parentMenu;
   });
   this->addNodes(&action_menu, "Upload", ST77XX_WHITE, NULL, 0, [this]() {
-    //wifi_ops.deinitWiFi();
-    //delay(10);
-    //wifi_ops.initWiFi();
-    //delay(10);
-
-    //wifi_ops.deinitBLE();
-
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
       if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name)) {
@@ -33,7 +26,6 @@ void UI::begin() {
     wifi_ops.deinitWiFi();
     delay(10);
     wifi_ops.initWiFi();
-    //wifi_ops.initBLE();
     delay(2000);
   });
   this->addNodes(&action_menu, "Delete", ST77XX_WHITE, NULL, 0, [this]() {
