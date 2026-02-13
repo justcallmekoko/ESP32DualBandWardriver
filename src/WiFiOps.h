@@ -37,10 +37,12 @@ extern WebServer server;
 #define WIFI_UPDATE     2
 
 typedef struct __attribute__((packed)) {
-  char     magic[4];   // "ENOW"
-  uint8_t  type;       // MsgType
-  uint32_t counter;    // heartbeat counter (valid for MSG_HEARTBEAT)
-} enow_msg_t;
+  char     magic[4];               // "ENOW"
+  uint8_t  type;                   // MSG_TEXT
+  uint32_t counter;                // heartbeat counter (valid for MSG_HEARTBEAT)
+  uint16_t len;                    // number of bytes in text (not including NUL)
+  char     text[ENOW_TEXT_MAX + 1];  // +1 for NUL terminator
+} enow_text_msg_t;
 
 class WiFiOps
 {
@@ -90,11 +92,11 @@ class WiFiOps
 
   public:
     #ifdef CORE
-      uint8_t run_mode = CORE_MODE;
+      int run_mode = CORE_MODE;
     #elif defined(NODE)
-      uint8_t run_mode = NODE_MODE;
+      int run_mode = NODE_MODE;
     #else
-      uint8_t run_mode = SOLO_MODE;
+      int run_mode = SOLO_MODE;
     #endif
 
     uint mac_history_cursor = 0;
@@ -131,6 +133,9 @@ class WiFiOps
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
     void startESPNow();
+    bool getHasCore();
+    bool getSecureReady();
+    bool sendEncryptedStringToCore(const String& s);
 
     void startAccessPoint();
     void serveConfigPage();

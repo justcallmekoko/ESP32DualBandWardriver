@@ -50,6 +50,7 @@
 #define CORE_MODE 3
 
 #define ENOW_KEY_MAX_LEN 32
+#define ENOW_TEXT_MAX    200
 
 //// BLE stuff
 #define BLE_SCAN_DURATION   1 * 500 // 0.5 second

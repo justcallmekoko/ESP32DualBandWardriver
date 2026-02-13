@@ -57,17 +57,13 @@ void UI::begin() {
     this->current_menu = &sd_file_menu;
   });
 
-  this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {
-    this->current_menu = &mode_menu;
-  });
-
   // Mode Menu
   this->addNodes(&mode_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->current_menu = mode_menu.parentMenu;
   });
   this->addNodes(&mode_menu, "Solo", ST77XX_WHITE, NULL, 0, [this]() {
     wifi_ops.run_mode = SOLO_MODE;
-    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    //settings.saveSetting<bool>("m", wifi_ops.run_mode);
     this->current_menu = mode_menu.parentMenu;
     display.clearScreen();
     display.drawCenteredText("Mode set", true);
@@ -75,18 +71,20 @@ void UI::begin() {
   });
   this->addNodes(&mode_menu, "Core", ST77XX_WHITE, NULL, 0, [this]() {
     wifi_ops.run_mode = CORE_MODE;
-    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    //settings.saveSetting<bool>("m", wifi_ops.run_mode);
     this->current_menu = mode_menu.parentMenu;
     display.clearScreen();
     display.drawCenteredText("Mode set", true);
+    wifi_ops.startESPNow();
     delay(2000);
   });
   this->addNodes(&mode_menu, "Node", ST77XX_WHITE, NULL, 0, [this]() {
     wifi_ops.run_mode = NODE_MODE;
-    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    //settings.saveSetting<bool>("m", wifi_ops.run_mode);
     this->current_menu = mode_menu.parentMenu;
     display.clearScreen();
     display.drawCenteredText("Mode set", true);
+    wifi_ops.startESPNow();
     delay(2000);
   });
 
@@ -223,33 +221,41 @@ void UI::setupSDFileList() {
 }
 
 void UI::buildSDFileMenu() {
-  this->setupSDFileList();
+  if (sd_obj.supported) {
+    this->setupSDFileList();
 
-  sd_file_menu.list->clear();
-  delete sd_file_menu.list;
-  sd_file_menu.list = new LinkedList<MenuNode>();
-  sd_file_menu.name = "Logs";
+    sd_file_menu.list->clear();
+    delete sd_file_menu.list;
+    sd_file_menu.list = new LinkedList<MenuNode>();
+    sd_file_menu.name = "Logs";
 
-  this->addNodes(&sd_file_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
-    this->stat_display_mode = 0;
+    this->addNodes(&sd_file_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
+      this->stat_display_mode = 0;
 
-    if (buffer.getFileName() == "") {
-      Logger::log(STD_MSG, "Active log file was deleted. Creating new one...");
-      wifi_ops.startLog(LOG_FILE_NAME);
-      Logger::log(STD_MSG, "New log file: " + buffer.getFileName());
+      if (buffer.getFileName() == "") {
+        Logger::log(STD_MSG, "Active log file was deleted. Creating new one...");
+        wifi_ops.startLog(LOG_FILE_NAME);
+        Logger::log(STD_MSG, "New log file: " + buffer.getFileName());
+      }
+    });
+
+    this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {
+      this->current_menu = &mode_menu;
+    });
+
+    for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+      File current_file = sd_obj.getFile("/" + sd_obj.sd_files->get(i));
+      this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
+        sd_obj.selected_file_name = sd_obj.sd_files->get(i);
+        Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
+        this->current_menu = &action_menu;
+      }, current_file.size());
     }
-  });
 
-  for (int i = 0; i < sd_obj.sd_files->size(); i++) {
-    File current_file = sd_obj.getFile("/" + sd_obj.sd_files->get(i));
-    this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
-      sd_obj.selected_file_name = sd_obj.sd_files->get(i);
-      Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
-      this->current_menu = &action_menu;
-    }, current_file.size());
+    Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");
+  } else {
+    Logger::log(WARN_MSG, "SD Card not detected. Skipping menu creation...");
   }
-
-  Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");
 }
 
 void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place, std::function<void()> callable, uint32_t size, bool selected, String command) {

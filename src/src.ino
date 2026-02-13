@@ -81,6 +81,8 @@ void setup() {
   // Init UI
   ui_obj.begin();
 
+  settings.printJsonSettings(settings.getSettingsString());
+
   Logger::log(GUD_MSG, "Initialization complete!");
 }
 
@@ -97,7 +99,11 @@ void loop() {
   buffer.save();
   ui_obj.main(currentTime);
 
+  // Solo or Core modes
   if ((gps.getFixStatus()) && (sd_obj.supported) && (ui_obj.stat_display_mode != SD_FILES))
+    wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
+  // Nodes
+  else if ((wifi_ops.run_mode == NODE_MODE) && (wifi_ops.getHasCore()) && (wifi_ops.getSecureReady()))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
   else
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);
