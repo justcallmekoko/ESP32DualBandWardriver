@@ -99,6 +99,10 @@ int Settings::loadSetting<int>(String key) {
       return json["Settings"][i]["value"];
   }
 
+  Logger::log(WARN_MSG, "Did not find setting named " + (String)key + ". Creating...");
+  if (this->createDefaultSettings(SPIFFS, true, json["Settings"].size(), "Int", key))
+    return 1;
+
   return 0;
 }
 
@@ -497,6 +501,22 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
       json["Settings"][index]["value"] = "";
       json["Settings"][index]["range"]["min"] = "";
       json["Settings"][index]["range"]["max"] = "";
+
+      if (serializeJson(json, settings_string) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to string");
+      }
+
+      if (serializeJson(json, settingsFile) == 0) {
+        Logger::log(WARN_MSG, "Failed to write to file");
+      }
+    }
+    else if (typeStr == "Int") {
+      Logger::log(WARN_MSG, "Creating Int setting...");
+      json["Settings"][index]["name"] = name;
+      json["Settings"][index]["type"] = typeStr;
+      json["Settings"][index]["value"] = 1;
+      json["Settings"][index]["range"]["min"] = 1;
+      json["Settings"][index]["range"]["max"] = 10;
 
       if (serializeJson(json, settings_string) == 0) {
         Logger::log(WARN_MSG, "Failed to write to string");

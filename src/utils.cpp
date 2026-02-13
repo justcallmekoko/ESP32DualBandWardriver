@@ -155,6 +155,11 @@ void Utils::convertMacStringToUint8(const String& macStr, uint8_t macAddr[6]) {
     }
 }
 
+void Utils::macToStr(const uint8_t* mac, char* out18) {
+  sprintf(out18, "%02X:%02X:%02X:%02X:%02X:%02X",
+          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
 // Function to check if the given MAC address matches any known OUI
 const char* Utils::getManufacturer(const char *addr) {
   static char oui[9]; // Temporary buffer for extracted OUI

@@ -3,12 +3,15 @@
 void UI::begin() {
   sd_file_menu.list = new LinkedList<MenuNode>();
   action_menu.list = new LinkedList<MenuNode>();
+  mode_menu.list = new LinkedList<MenuNode>();
 
+  mode_menu.name = "Mode";
   action_menu.name = "Action";
 
   this->buildSDFileMenu();
 
   action_menu.parentMenu = &sd_file_menu;
+  mode_menu.parentMenu = &sd_file_menu;
 
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->current_menu = action_menu.parentMenu;
@@ -52,6 +55,39 @@ void UI::begin() {
     this->buildSDFileMenu();
 
     this->current_menu = &sd_file_menu;
+  });
+
+  this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = &mode_menu;
+  });
+
+  // Mode Menu
+  this->addNodes(&mode_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = mode_menu.parentMenu;
+  });
+  this->addNodes(&mode_menu, "Solo", ST77XX_WHITE, NULL, 0, [this]() {
+    wifi_ops.run_mode = SOLO_MODE;
+    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    this->current_menu = mode_menu.parentMenu;
+    display.clearScreen();
+    display.drawCenteredText("Mode set", true);
+    delay(2000);
+  });
+  this->addNodes(&mode_menu, "Core", ST77XX_WHITE, NULL, 0, [this]() {
+    wifi_ops.run_mode = CORE_MODE;
+    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    this->current_menu = mode_menu.parentMenu;
+    display.clearScreen();
+    display.drawCenteredText("Mode set", true);
+    delay(2000);
+  });
+  this->addNodes(&mode_menu, "Node", ST77XX_WHITE, NULL, 0, [this]() {
+    wifi_ops.run_mode = NODE_MODE;
+    settings.saveSetting<bool>("mode", wifi_ops.run_mode);
+    this->current_menu = mode_menu.parentMenu;
+    display.clearScreen();
+    display.drawCenteredText("Mode set", true);
+    delay(2000);
   });
 
   this->current_menu = &sd_file_menu;

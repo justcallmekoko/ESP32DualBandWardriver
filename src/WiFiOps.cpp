@@ -1,5 +1,34 @@
 #include "WiFiOps.h"
 
+static const uint8_t BROADCAST_MAC[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+static const char MAGIC[4] = {'E','N','O','W'};
+
+static constexpr uint8_t ESPNOW_CHANNEL = 6;
+
+// Retry behavior for nodes
+static constexpr uint32_t REQ_INITIAL_MS = 300;   // first retry delay
+static constexpr uint32_t REQ_MAX_MS     = 5000;  // cap retry interval
+
+static uint8_t g_core_mac[6] = {0};
+static bool g_have_core = false;
+static bool g_secure_ready = false;
+
+static uint32_t g_hb_counter = 0;
+static unsigned long g_last_hb_ms = 0;
+
+// Retry state
+static unsigned long g_last_req_ms = 0;
+static uint32_t g_req_interval_ms = REQ_INITIAL_MS;
+
+uint8_t pmk[16];
+uint8_t lmk[16];
+
+enum MsgType : uint8_t {
+  MSG_CORE_REQUEST   = 1,
+  MSG_CORE_REPLY     = 2,
+  MSG_HEARTBEAT      = 3
+};
+
 WebServer server(80);
 
 // Add compiler.c.elf.extra_flags=-Wl,-zmuldefs to platform.txt
@@ -43,6 +72,201 @@ class scanCallbacks : public NimBLEScanCallbacks {
     }
   }
 };
+
+static void setFixedChannel(uint8_t ch) {
+  // Disable power save (prevents weird timing/channel behavior)
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+  esp_wifi_set_promiscuous(true);
+
+  // Force primary channel
+  esp_err_t e = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  if (e != ESP_OK) {
+    Serial.printf("esp_wifi_set_channel failed: %d (0x%X)\n", (int)e, (unsigned)e);
+    return;
+  }
+
+  // Verify
+  uint8_t primary = 0;
+  wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+  esp_wifi_get_channel(&primary, &second);
+  Serial.printf("Home channel is now: %u\n", primary);
+
+  esp_wifi_set_promiscuous(false);
+}
+
+bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]) {
+  // If peer exists (possibly with wrong mode), delete it first
+  if (esp_now_is_peer_exist(mac)) {
+    esp_now_del_peer(mac);
+    delay(10); // small settle
+  }
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, mac, 6);
+  peerInfo.channel = 0;          // follow home channel (safer)
+  peerInfo.encrypt = encrypt;
+
+  if (encrypt) {
+    memcpy(peerInfo.lmk, lmk16, 16);
+  }
+
+  return (esp_now_add_peer(&peerInfo) == ESP_OK);
+}
+
+void WiFiOps::sendCoreRequest() {
+  enow_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_CORE_REQUEST;
+  msg.counter = 0;
+
+  // Broadcast peer must be unencrypted
+  addPeerWithMode(BROADCAST_MAC, false, nullptr);
+
+  esp_err_t res = esp_now_send(BROADCAST_MAC, (uint8_t*)&msg, sizeof(msg));
+  Serial.printf("CORE: Broadcast CORE_REQUEST -> %s (next in %lu ms)\n",
+                (res == ESP_OK) ? "OK" : "FAIL",
+                (unsigned long)g_req_interval_ms);
+}
+
+void WiFiOps::sendCoreReply(const uint8_t* destMac) {
+  enow_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_CORE_REPLY;
+  msg.counter = 0;
+
+  if (!addPeerWithMode(destMac, false, nullptr)) {
+    Logger::log(WARN_MSG, "CORE: Failed to add NODE peer (reply)");
+    return;
+  }
+
+  esp_err_t res = esp_now_send(destMac, (uint8_t*)&msg, sizeof(msg));
+
+  char macStr[18];
+  utils.macToStr(destMac, macStr);
+
+  Serial.printf("CORE: Sent CORE_REPLY to %s -> %s\n",
+                macStr, (res == ESP_OK) ? "OK" : "FAIL");
+}
+
+void WiFiOps::sendHeartbeat() {
+  if (!g_secure_ready) return;
+
+  enow_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_HEARTBEAT;
+  msg.counter = g_hb_counter++;
+
+  esp_err_t res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+  if (res != ESP_OK) {
+    Logger::log(WARN_MSG, "NODE: Encrypted heartbeat send FAIL");
+  } else
+   Logger::log(WARN_MSG, "NODE: Sent Encrypted heartbeat: " + (String)millis());
+}
+
+void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+  extern WiFiOps wifi_ops;
+
+  if (!info || !data || len < (int)sizeof(enow_msg_t)) return;
+
+  enow_msg_t msg;
+  memcpy(&msg, data, sizeof(msg));
+
+  if (memcmp(msg.magic, MAGIC, 4) != 0) return;
+
+  const int rssi = (info->rx_ctrl) ? info->rx_ctrl->rssi : 0;
+
+  char srcMacStr[18];
+  utils.macToStr(info->src_addr, srcMacStr);
+
+  if (wifi_ops.run_mode == CORE_MODE) {
+    if (msg.type == MSG_CORE_REQUEST) {
+      Serial.printf("CORE: RX CORE_REQUEST from %s | RSSI %d dBm\n", srcMacStr, rssi);
+
+      wifi_ops.sendCoreReply(info->src_addr);
+
+      if (!wifi_ops.addPeerWithMode(info->src_addr, true, lmk)) {
+        Logger::log(WARN_MSG, "CORE: Failed to add ENCRYPTED peer for NODE");
+      } else {
+        Serial.printf("CORE: Encrypted peer ready for %s\n", srcMacStr);
+      }
+      return;
+    }
+
+    if (msg.type == MSG_HEARTBEAT) {
+      Serial.printf("CORE: RX HEARTBEAT from %s | RSSI %d dBm | #%lu\n",
+                    srcMacStr, rssi, (unsigned long)msg.counter);
+      return;
+    }
+  }
+  else if (wifi_ops.run_mode == NODE_MODE) {
+    if (msg.type == MSG_CORE_REPLY) {
+      memcpy(g_core_mac, info->src_addr, 6);
+      g_have_core = true;
+
+      char coreStr[18];
+      utils.macToStr(g_core_mac, coreStr);
+      Serial.printf("NODE: Learned CORE MAC (plaintext reply): %s | RSSI %d dBm\n", coreStr, rssi);
+
+      // Add encrypted peer for core now
+      if (!wifi_ops.addPeerWithMode(g_core_mac, true, lmk)) {
+        Logger::log(WARN_MSG, "NODE: Failed to add ENCRYPTED peer for CORE");
+        g_secure_ready = false;
+      } else {
+        g_secure_ready = true;
+        Logger::log(WARN_MSG, "NODE: Encrypted peer ready; switching to encrypted heartbeats...");
+      }
+      return;
+    }
+  }
+}
+
+void WiFiOps::startESPNow() {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+  this->computeKeysFromEnowKey();
+
+  if (esp_now_init() != ESP_OK) {
+    Logger::log(WARN_MSG, "ESP-NOW init failed");
+    return;
+  }
+
+  if (esp_now_set_pmk(pmk) != ESP_OK) {
+    Logger::log(WARN_MSG, "Warning: esp_now_set_pmk failed");
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  if (this->run_mode == CORE_MODE) {
+    Logger::log(STD_MSG, "Role: CORE");
+    Logger::log(STD_MSG, "CORE: Fixed channel " + (String)ESPNOW_CHANNEL + ", probing for CORE...\n");
+  }
+  else if (this->run_mode == NODE_MODE) {
+    Logger::log(STD_MSG, "Role: NODE");
+    Logger::log(STD_MSG, "NODE: Fixed channel " + (String)ESPNOW_CHANNEL + ", probing for CORE...\n");
+
+    g_last_req_ms = millis();
+
+    this->sendCoreRequest();
+  }
+}
+
+void WiFiOps::derive_key_16(const String& s, uint8_t out16[16]) {
+  uint8_t hash[32];
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts(&ctx, 0);
+  mbedtls_sha256_update(&ctx, (const unsigned char*)s.c_str(), s.length());
+  mbedtls_sha256_finish(&ctx, hash);
+  mbedtls_sha256_free(&ctx);
+
+  memcpy(out16, hash, 16); // first 16 bytes
+}
+
+void WiFiOps::computeKeysFromEnowKey() {
+  extern WiFiOps wifi_ops;
+  derive_key_16(wifi_ops.esp_now_key + "_pmk", pmk);
+  derive_key_16(wifi_ops.esp_now_key + "_lmk", lmk);
+}
 
 void WiFiOps::setCurrentScanMode(uint8_t scan_mode) {
   this->current_scan_mode = scan_mode;
@@ -652,6 +876,18 @@ void WiFiOps::serveConfigPage() {
         Password: <input type="password" name="password"><br>
         WiGLE API Name: <input type="text" name="wigle_user"><br>
         WiGLE API Token: <input type="password" name="wigle_token"><br>
+        ENOW Key: <input type="text" name="enow_key"><br><br>
+
+        <h3>Device Mode</h3>
+        <input type="radio" id="solo" name="device_mode" value="solo">
+        <label for="solo">Solo</label><br>
+
+        <input type="radio" id="core" name="device_mode" value="core">
+        <label for="core">Core</label><br>
+
+        <input type="radio" id="node" name="device_mode" value="node">
+        <label for="node">Node</label><br><br>
+
         <input type="submit" value="Save"><br><br>
       </form>
       <h2>Files on SD Card</h2>
@@ -731,9 +967,38 @@ void WiFiOps::serveConfigPage() {
       } else {
         doc["wigle_token"] = this->wigle_token;
       }
+      if (server.hasArg("enow_key")) {
+        if (server.arg("enow_key") != "") {
+          doc["enow_key"] = server.arg("enow_key");
+          this->esp_now_key = server.arg("enow_key");
+        } else {
+          doc["enow_key"] = this->esp_now_key;
+        }
+      } else {
+        doc["enow_key"] = this->esp_now_key;
+      }
+      if (server.hasArg("device_mode")) {
+        if (server.arg("device_mode") != "") {
+          uint8_t mode_arg = 1;
+          if (server.arg("device_mode") == "solo")
+            mode_arg = SOLO_MODE;
+          else if (server.arg("device_mode") == "node")
+            mode_arg = NODE_MODE;
+          else if (server.arg("device_mode") == "core")
+            mode_arg = CORE_MODE;
+
+          doc["mode"] = mode_arg;
+          this->run_mode = mode_arg;
+        } else {
+          doc["mode"] = this->run_mode;
+        }
+      } else {
+        doc["mode"] = this->run_mode;
+      }
 
       Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
       Logger::log(STD_MSG, "Wigle User: " + this->wigle_user);
+      Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
 
       File configFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
       if (configFile) {
@@ -995,6 +1260,16 @@ bool WiFiOps::begin(bool skip_admin) {
 
     this->deinitWiFi();
   }
+
+  this->esp_now_key = settings.loadSetting<String>("enow_key");
+  this->run_mode = settings.loadSetting<int>("mode");
+
+  if (this->run_mode == SOLO_MODE)
+    Logger::log(STD_MSG, "Mode: SOLO");
+  if (this->run_mode == NODE_MODE)
+    Logger::log(STD_MSG, "Mode: NODE");
+  if (this->run_mode == CORE_MODE)
+    Logger::log(STD_MSG, "Mode: CORE");
 
   this->initWiFi();
 
