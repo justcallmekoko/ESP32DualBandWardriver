@@ -104,6 +104,7 @@ class WiFiOps
     bool serving = false;
     uint32_t last_web_client_activity;
     uint32_t last_timer;
+    bool use_encryption = false;
 
     String esp_now_key = "";
 
@@ -135,7 +136,9 @@ class WiFiOps
     void startESPNow();
     bool getHasCore();
     bool getSecureReady();
+    bool getNodeReady();
     bool sendEncryptedStringToCore(const String& s);
+    bool sendBroadcastStringPlain(const String& s);
 
     void startAccessPoint();
     void serveConfigPage();

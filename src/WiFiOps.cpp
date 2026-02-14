@@ -196,6 +196,45 @@ bool WiFiOps::sendEncryptedStringToCore(const String& s) {
   return true;
 }
 
+bool WiFiOps::sendBroadcastStringPlain(const String& s) {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+
+  static const uint8_t bcast_mac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+
+  if (!esp_now_is_peer_exist(bcast_mac)) {
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, bcast_mac, 6);
+    peerInfo.channel = 0;       // follow current home channel
+    peerInfo.encrypt = false;   // plaintext broadcast
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+      Logger::log(WARN_MSG, "NODE: Failed to add broadcast peer");
+      return false;
+    }
+  }
+
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_TEXT;
+  msg.counter = 0;
+
+  size_t n = s.length();
+  if (n > ENOW_TEXT_MAX) n = ENOW_TEXT_MAX;
+
+  memcpy(msg.text, s.c_str(), n);
+  msg.text[n] = '\0';
+  msg.len = (uint16_t)n;
+
+  esp_err_t res = esp_now_send(bcast_mac, (uint8_t*)&msg, sizeof(msg));
+
+  if (res != ESP_OK) {
+    Serial.printf("NODE: Broadcast plaintext send FAIL (err=%d)\n", (int)res);
+    return false;
+  }
+
+  return true;
+}
+
 void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   extern WiFiOps wifi_ops;
 
@@ -290,7 +329,8 @@ void WiFiOps::startESPNow() {
 
     g_last_req_ms = millis();
 
-    this->sendCoreRequest();
+    if (this->use_encryption)
+      this->sendCoreRequest();
   }
 }
 
@@ -323,6 +363,15 @@ bool WiFiOps::getHasCore() {
 
 bool WiFiOps::getSecureReady() {
   return g_secure_ready;
+}
+
+bool WiFiOps::getNodeReady() {
+  if (!this->use_encryption)
+    return true;
+  else if ((this->getHasCore()) && (this->getSecureReady()))
+    return true;
+
+  return false;
 }
 
 uint8_t WiFiOps::getCurrentScanMode() {
@@ -507,8 +556,10 @@ void WiFiOps::processWardrive(uint16_t networks) {
         String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + (String)WiFi.encryptionType(i) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
         digitalWrite(LED_PIN, LOW);
-        this->sendEncryptedStringToCore(enow_line);
-        //this->sendHeartbeat();
+        if (this->use_encryption)
+          this->sendEncryptedStringToCore(enow_line);
+        else
+          this->sendBroadcastStringPlain(enow_line);
       }
     }
   }
@@ -1341,20 +1392,6 @@ bool WiFiOps::begin(bool skip_admin) {
 
   this->run_mode = settings.loadSetting<int>("m");
 
-  /*Logger::log(STD_MSG, "Run Mode: " + (String)this->run_mode);
-
-  int temp_run_mode = settings.loadSetting<int>("m");
-
-  if ((this->run_mode != temp_run_mode) && (temp_run_mode != SOLO_MODE)) {
-    Logger::log(WARN_MSG, (String)temp_run_mode + " run mode does not equal " + (String)this->run_mode + ". Updating settings file...");
-    if (!settings.saveSetting<bool>("m", this->run_mode))
-      Logger::log(WARN_MSG, "Failed to save setting");
-  }
-  else {
-    Logger::log(WARN_MSG, (String)temp_run_mode + " equals " + (String)this->run_mode + ". Loading...");
-    this->run_mode = temp_run_mode;
-  }*/
-
   Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
 
   if (this->run_mode == SOLO_MODE)
@@ -1384,7 +1421,7 @@ void WiFiOps::main(uint32_t currentTime) {
   if (this->current_scan_mode == WIFI_WARDRIVING)
     this->runWardrive(currentTime);
 
-  if ((this->run_mode == NODE_MODE) && (!g_have_core)) {
+  if ((this->run_mode == NODE_MODE) && (!g_have_core) && (this->use_encryption)) {
     if (currentTime - g_last_req_ms >= g_req_interval_ms) {
       g_last_req_ms = currentTime;
       this->sendCoreRequest();
