@@ -103,8 +103,13 @@ void loop() {
   if ((gps.getFixStatus()) && (sd_obj.supported) && (ui_obj.stat_display_mode != SD_FILES))
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
   // Nodes
-  else if ((wifi_ops.run_mode == NODE_MODE) && (wifi_ops.getNodeReady()))
+  else if ((wifi_ops.run_mode == NODE_MODE) && (wifi_ops.getNodeReady())) {
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
-  else
+    digitalWrite(LED_PIN, HIGH);
+  }
+  else {
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);
+    if (wifi_ops.run_mode == NODE_MODE)
+      digitalWrite(LED_PIN, LOW);
+  }
 }

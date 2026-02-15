@@ -219,10 +219,10 @@ bool Settings::saveSetting<bool>(String key, bool value) {
 }
 
 template <typename T>
-T Settings::saveSetting(String key, int value) {}
+T Settings::saveSetting(String key, int value, bool is_int) {}
 
 template<>
-bool Settings::saveSetting<bool>(String key, int value) {
+bool Settings::saveSetting<bool>(String key, int value, bool is_int) {
   DynamicJsonDocument json(1024); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {

@@ -47,8 +47,33 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
     uint8_t macBytes[6];
 
-    if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
-      
+    if (wifi_ops.run_mode == SOLO_MODE) {
+      if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
+        
+        utils.stringToMac(advertisedDevice->getAddress().toString().c_str(), macBytes);
+
+        if (wifi_ops.seen_mac(macBytes))
+          return;
+
+        wifi_ops.save_mac(macBytes);
+
+        wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+
+        wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+
+        bool do_save = false;
+
+        if (gps.getFixStatus())
+          do_save = true;
+
+        String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
+        Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
+
+        if (do_save)
+          buffer.append(wardrive_line + "\n");
+      }
+    }
+    else if (wifi_ops.run_mode == NODE_MODE) {
       utils.stringToMac(advertisedDevice->getAddress().toString().c_str(), macBytes);
 
       if (wifi_ops.seen_mac(macBytes))
@@ -60,16 +85,12 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
       wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
 
-      bool do_save = false;
-
-      if (gps.getFixStatus())
-        do_save = true;
-
-      String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
-      Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
-
-      if (do_save)
-        buffer.append(wardrive_line + "\n");
+      String enow_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE],0," + (String)(String)advertisedDevice->getRSSI() + ",B";
+      Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + enow_line);
+      if (wifi_ops.use_encryption)
+        wifi_ops.sendEncryptedStringToCore(enow_line);
+      else
+        wifi_ops.sendBroadcastStringPlain(enow_line);
     }
   }
 };
@@ -235,6 +256,37 @@ bool WiFiOps::sendBroadcastStringPlain(const String& s) {
   return true;
 }
 
+bool WiFiOps::parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out) {
+  const char* line = msg.text;   // <-- no copy
+  int start = 0;
+  int fieldIndex = 0;
+
+  String fields[6];
+
+  while (fieldIndex < 6) {
+    const char* comma = strchr(line + start, ',');
+
+    if (!comma) {
+      fields[fieldIndex++] = String(line + start);
+      break;
+    }
+
+    fields[fieldIndex++] = String(line + start).substring(0, comma - (line + start));
+    start = (comma - line) + 1;
+  }
+
+  if (fieldIndex != 6) return false;
+
+  out.bssid    = fields[0];
+  out.essid    = fields[1];
+  out.security = fields[2];
+  out.channel  = fields[3].toInt();
+  out.rssi     = fields[4].toInt();
+  out.type     = fields[5];
+
+  return true;
+}
+
 void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   extern WiFiOps wifi_ops;
 
@@ -272,6 +324,44 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
       const enow_text_msg_t* t = (const enow_text_msg_t*)data;
       if (t->len <= ENOW_TEXT_MAX) {
         Serial.printf("CORE: RX WARDRV TEXT from %s: %s\n", srcMacStr, t->text);
+        WardriveRecord rec;
+        if (wifi_ops.parseWardriveLine(*t, rec)) {
+
+          // Check for new entry
+          uint8_t bssid[6] = {0};
+          utils.convertMacStringToUint8(rec.bssid, bssid);
+          if (wifi_ops.seen_mac(bssid))
+            return;
+
+          // Save new entry
+          wifi_ops.save_mac(bssid);
+
+          // Save line to file
+          String type = "WIFI";
+          if (rec.type == "B")
+            type = "BLE";
+          String wardrive_line = rec.bssid + "," + rec.essid + "," + rec.security + "," + gps.getDatetime() + "," + (String)rec.channel + "," + (String)rec.rssi + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + "," + type;
+          Logger::log(GUD_MSG, wardrive_line);
+          if (gps.getFixStatus()) {
+            // Update stats
+            if (type == "WIFI") {
+              wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
+              wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
+
+              if (rec.channel > 14) {
+                wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
+              } else {
+                wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
+              }
+            }
+            else if (type == "BLE") {
+              wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+
+              wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+            }
+            buffer.append(wardrive_line + "\n");
+          }
+        }
       } else {
         Logger::log(WARN_MSG, "CORE: RX WARDRV TEXT: text len: " + (String)t->len + " > ENOW_TEXT_MAX");
       }
@@ -488,7 +578,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
   // Process results if networks found
   if (networks > 0) {
     for (int i = 0; i < networks; i++) {
-      digitalWrite(LED_PIN, HIGH);
+      if (this->run_mode == SOLO_MODE)
+        digitalWrite(LED_PIN, HIGH);
       display_string = "";
       do_save = false;
       uint8_t *this_bssid_raw = WiFi.BSSID(i);
@@ -544,7 +635,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
         String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
-        digitalWrite(LED_PIN, LOW);
+        if (this->run_mode == SOLO_MODE)
+          digitalWrite(LED_PIN, LOW);
 
         if (do_save) {
           buffer.append(wardrive_line + "\n");
@@ -553,9 +645,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
       else if (this->run_mode == NODE_MODE) {
         String ssid = WiFi.SSID(i);
         ssid.replace(",","_");
-        String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + (String)WiFi.encryptionType(i) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
+        String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
-        digitalWrite(LED_PIN, LOW);
         if (this->use_encryption)
           this->sendEncryptedStringToCore(enow_line);
         else
@@ -564,7 +655,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
     }
   }
 
-  digitalWrite(LED_PIN, LOW);
+  if (this->run_mode == SOLO_MODE)
+    digitalWrite(LED_PIN, LOW);
 }
 
 bool WiFiOps::mac_cmp(struct mac_addr addr1, struct mac_addr addr2) {
@@ -1008,6 +1100,10 @@ void WiFiOps::serveConfigPage() {
         <label for="node">Node</label><br><br>
 
         <input type="submit" value="Save"><br><br>
+
+        <h3>Use Encryption</h3>
+        <input type="checkbox" id="use_encryption" name="use_encryption" value="true">
+        <br>
       </form>
       <h2>Files on SD Card</h2>
     )rawliteral";
@@ -1108,12 +1204,22 @@ void WiFiOps::serveConfigPage() {
 
           doc["m"] = mode_arg;
           this->run_mode = mode_arg;
-          settings.saveSetting<bool>("m", this->run_mode);
+          settings.saveSetting<bool>("m", this->run_mode, true);
         } else {
           doc["m"] = this->run_mode;
         }
       } else {
         doc["m"] = this->run_mode;
+      }
+      if (server.hasArg("use_encryption")) {
+        if (server.arg("use_encryption") == "true") {
+          doc["e"] = true;
+          this->use_encryption = true;
+        } else {
+          doc["e"] = settings.loadSetting<bool>("e");
+        }
+      } else {
+        doc["e"] = settings.loadSetting<bool>("e");
       }
 
       Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
@@ -1317,6 +1423,8 @@ void WiFiOps::showCountdown() {
 bool WiFiOps::begin(bool skip_admin) {
   this->current_scan_mode = WIFI_STANDBY;
 
+  this->run_mode = settings.loadSetting<int>("m");
+
   if (!skip_admin) {
     // Init WiFi
     this->initWiFi();
@@ -1390,7 +1498,8 @@ bool WiFiOps::begin(bool skip_admin) {
   else
     this->esp_now_key = settings.loadSetting<String>("ek");
 
-  this->run_mode = settings.loadSetting<int>("m");
+  //this->run_mode = settings.loadSetting<int>("m");
+  this->use_encryption = settings.loadSetting<bool>("e");
 
   Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
 
@@ -1400,6 +1509,11 @@ bool WiFiOps::begin(bool skip_admin) {
     Logger::log(STD_MSG, "Mode: NODE");
   if (this->run_mode == CORE_MODE)
     Logger::log(STD_MSG, "Mode: CORE");
+
+  if (this->use_encryption)
+    Logger::log(STD_MSG, "Encryption: Enabled");
+  else
+    Logger::log(STD_MSG, "Encryption: Disabled");
 
   this->initWiFi();
 

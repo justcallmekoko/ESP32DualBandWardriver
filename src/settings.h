@@ -51,7 +51,7 @@ class Settings {
     T saveSetting(String key, bool value);
 
     template <typename T>
-    T saveSetting(String key, int value);
+    T saveSetting(String key, int value, bool is_int = true);
 
     template <typename T>
     T saveSetting(String key, String value);

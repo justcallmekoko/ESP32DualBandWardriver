@@ -44,6 +44,15 @@ typedef struct __attribute__((packed)) {
   char     text[ENOW_TEXT_MAX + 1];  // +1 for NUL terminator
 } enow_text_msg_t;
 
+struct WardriveRecord {
+  String bssid;
+  String essid;
+  String security;
+  int    channel;
+  int    rssi;
+  String type;
+};
+
 class WiFiOps
 {
   private:
@@ -139,6 +148,7 @@ class WiFiOps
     bool getNodeReady();
     bool sendEncryptedStringToCore(const String& s);
     bool sendBroadcastStringPlain(const String& s);
+    bool parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out);
 
     void startAccessPoint();
     void serveConfigPage();
