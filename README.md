@@ -12,6 +12,7 @@ Logs are formatted for Wigle and saved to SD card.
 - [Install Firmware](#install-firmware)
 - [Update Firmware](#update-firmware)
 - [Usage](#usage)
+- [Modes](#modes)
 
 ## Connections
 **IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you much remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly**
@@ -99,3 +100,21 @@ At every boot, if the C5 Wardriver is able to connect to a WLAN using the user-p
 ### Buttons
 During normal wardriving operation, the `UP` and `DOWN` buttons may be used to switch between display modes for different presentation of the wardriving status and statistic information.  
 The initial WiFi admin sequence at boot can be skipped by holding the `SELECT` button as soon as the boot logo appears.
+
+## Modes
+The C5 Wardriver is capable of using multiple ESP32 modules as separate collection nodes with a single "Core" ESP32 to consolidate the collection data and save it to an SD card. The following section describes the process for selecting specific modes as well as the purpose for each mode. For [Nodes](#node-mode) and [Cores](#core-mode) to communicate, they do not require a physical connection to each other as their communication is conduction over-the-air. They are required to be within typical WiFi range of each other. **When configuring the device mode from the Admin web interface, the device will boot into that mode from that point on. If selecting the mode from the menu directly on the device, the mode is temporary and will reset upon next boot.**
+
+### Mode Selection
+Modes may be selected from the Admin web interface from [Initial Setup](#initial-setup) or from the main menu if using a full display and button hardware setup.
+
+### Solo Mode
+Solo mode allows the C5 Wardriver to function as a standalone device which will collect and store data on its own. To function in solo mode, the device needs connection to an SD card and a GPS module and needs to have a GPS fix. While in Solo mode, users can upload logs directly to Wigle.
+
+### Node Mode
+Node mode allows a device to collect wardriving data but instead of storing the data, it is given to a [Core](#core-mode) which is responsible for pairing the collection sata with location data and consolidating it into a wardriving log file. Nodes do not require SD card or GPS in order to function properly.
+
+### Core Mode
+Core mode allows a device to receive wardriving data from [Nodes](#node-mode). This data is paired with location data and saved to a wardriving log file. Cores require an SD card and GPS module in order to function properly. Cores themselves do not collect wardriving data and because of this, do not require any specific antenna configurations. Cores can upload directly to Wigle, same as Solo mode.
+
+### Encryption
+Communications between the [Nodes](#node-mode) and the [Core](#core-mode) can be encrypted. Encryption can be enabled using the Admin web interface from [Initial Setup](#initial-setup) however there is an important caveat. If encryption is enabled, the number of nodes you may use at once is limited to six due to memory constraints. If encryption is disabled, the number of nodes you may use at once is theoretically unlimited.
