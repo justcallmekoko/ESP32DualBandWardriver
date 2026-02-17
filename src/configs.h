@@ -24,9 +24,33 @@
 #define JCMK_HOST_BOARD
 
 //// Firmware info stuff
-#define FIRMWARE_VERSION "v1.0.0"
+#define FIRMWARE_VERSION "v2.0.0"
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
+//// Role stuff
+#define SOLO
+// #define CORE
+// #define NODE
+
+#if !defined(SOLO) && !defined(CORE) && !defined(NODE)
+  #error "Define exactly one role: SOLO, CORE, or NODE"
+#endif
+#if defined(SOLO) && defined(CORE) && defined(NODE)
+  #error "Define exactly one role: SOLO, CORE, or NODE"
+#elif defined(SOLO) && defined(CORE)
+  #error "Define exactly one role: SOLO, CORE, or NODE"
+#elif defined(CORE) && defined(NODE)
+  #error "Define exactly one role: SOLO, CORE, or NODE"
+#elif defined(SOLO) && defined(NODE)
+  #error "Define exactly one role: SOLO, CORE, or NODE"
+#endif
+
+#define SOLO_MODE 1
+#define NODE_MODE 2
+#define CORE_MODE 3
+
+#define ENOW_KEY_MAX_LEN 32
+#define ENOW_TEXT_MAX    200
 
 //// BLE stuff
 #define BLE_SCAN_DURATION   1 * 500 // 0.5 second

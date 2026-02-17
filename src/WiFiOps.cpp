@@ -1,5 +1,35 @@
 #include "WiFiOps.h"
 
+static const uint8_t BROADCAST_MAC[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+static const char MAGIC[4] = {'E','N','O','W'};
+
+static constexpr uint8_t ESPNOW_CHANNEL = 6;
+
+// Retry behavior for nodes
+static constexpr uint32_t REQ_INITIAL_MS = 300;   // first retry delay
+static constexpr uint32_t REQ_MAX_MS     = 5000;  // cap retry interval
+
+static uint8_t g_core_mac[6] = {0};
+static bool g_have_core = false;
+static bool g_secure_ready = false;
+
+static uint32_t g_hb_counter = 0;
+static unsigned long g_last_hb_ms = 0;
+
+// Retry state
+static unsigned long g_last_req_ms = 0;
+static uint32_t g_req_interval_ms = REQ_INITIAL_MS;
+
+uint8_t pmk[16];
+uint8_t lmk[16];
+
+enum MsgType : uint8_t {
+  MSG_CORE_REQUEST   = 1,
+  MSG_CORE_REPLY     = 2,
+  MSG_HEARTBEAT      = 3,
+  MSG_TEXT           = 4
+};
+
 WebServer server(80);
 
 // Add compiler.c.elf.extra_flags=-Wl,-zmuldefs to platform.txt
@@ -17,8 +47,33 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
     uint8_t macBytes[6];
 
-    if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
-      
+    if (wifi_ops.run_mode == SOLO_MODE) {
+      if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
+        
+        utils.stringToMac(advertisedDevice->getAddress().toString().c_str(), macBytes);
+
+        if (wifi_ops.seen_mac(macBytes))
+          return;
+
+        wifi_ops.save_mac(macBytes);
+
+        wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+
+        wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+
+        bool do_save = false;
+
+        if (gps.getFixStatus())
+          do_save = true;
+
+        String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
+        Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
+
+        if (do_save)
+          buffer.append(wardrive_line + "\n");
+      }
+    }
+    else if (wifi_ops.run_mode == NODE_MODE) {
       utils.stringToMac(advertisedDevice->getAddress().toString().c_str(), macBytes);
 
       if (wifi_ops.seen_mac(macBytes))
@@ -30,22 +85,383 @@ class scanCallbacks : public NimBLEScanCallbacks {
 
       wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
 
-      bool do_save = false;
-
-      if (gps.getFixStatus())
-        do_save = true;
-
-      String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
-      Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
-
-      if (do_save)
-        buffer.append(wardrive_line + "\n");
+      String enow_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE],0," + (String)(String)advertisedDevice->getRSSI() + ",B";
+      Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + enow_line);
+      if (wifi_ops.use_encryption)
+        wifi_ops.sendEncryptedStringToCore(enow_line);
+      else
+        wifi_ops.sendBroadcastStringPlain(enow_line);
     }
   }
 };
 
+void WiFiOps::setFixedChannel(uint8_t ch) {
+  // Disable power save (prevents weird timing/channel behavior)
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+  esp_wifi_set_promiscuous(true);
+
+  // Force primary channel
+  esp_err_t e = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  if (e != ESP_OK) {
+    Serial.printf("esp_wifi_set_channel failed: %d (0x%X)\n", (int)e, (unsigned)e);
+    return;
+  }
+
+  // Verify
+  uint8_t primary = 0;
+  wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+  esp_wifi_get_channel(&primary, &second);
+  Serial.printf("Home channel is now: %u\n", primary);
+
+  esp_wifi_set_promiscuous(false);
+}
+
+bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]) {
+  // If peer exists (possibly with wrong mode), delete it first
+  if (esp_now_is_peer_exist(mac)) {
+    esp_now_del_peer(mac);
+    delay(10); // small settle
+  }
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, mac, 6);
+  peerInfo.channel = 0;          // follow home channel (safer)
+  peerInfo.encrypt = encrypt;
+
+  if (encrypt) {
+    memcpy(peerInfo.lmk, lmk16, 16);
+  }
+
+  return (esp_now_add_peer(&peerInfo) == ESP_OK);
+}
+
+void WiFiOps::sendCoreRequest() {
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_CORE_REQUEST;
+  msg.counter = 0;
+
+  // Broadcast peer must be unencrypted
+  addPeerWithMode(BROADCAST_MAC, false, nullptr);
+
+  esp_err_t res = esp_now_send(BROADCAST_MAC, (uint8_t*)&msg, sizeof(msg));
+  Serial.printf("NODE: Broadcast CORE_REQUEST -> %s (next in %lu ms)\n",
+                (res == ESP_OK) ? "OK" : "FAIL",
+                (unsigned long)g_req_interval_ms);
+}
+
+void WiFiOps::sendCoreReply(const uint8_t* destMac) {
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_CORE_REPLY;
+  msg.counter = 0;
+
+  if (!addPeerWithMode(destMac, false, nullptr)) {
+    Logger::log(WARN_MSG, "CORE: Failed to add NODE peer (reply)");
+    return;
+  }
+
+  esp_err_t res = esp_now_send(destMac, (uint8_t*)&msg, sizeof(msg));
+
+  char macStr[18];
+  utils.macToStr(destMac, macStr);
+
+  Serial.printf("CORE: Sent CORE_REPLY to %s -> %s\n",
+                macStr, (res == ESP_OK) ? "OK" : "FAIL");
+}
+
+void WiFiOps::sendHeartbeat() {
+  if (!g_secure_ready) return;
+
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_HEARTBEAT;
+  msg.counter = g_hb_counter++;
+
+  esp_err_t res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+  if (res != ESP_OK) {
+    Logger::log(WARN_MSG, "NODE: Encrypted heartbeat send FAIL");
+  } else
+   Logger::log(WARN_MSG, "NODE: Sent Encrypted heartbeat: " + (String)millis());
+}
+
+bool WiFiOps::sendEncryptedStringToCore(const String& s) {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+
+  if (!g_secure_ready) {
+    Logger::log(WARN_MSG, "NODE: Not secure-ready; cannot send encrypted text");
+    return false;
+  }
+
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_TEXT;
+  msg.counter = 0;  // optional for text
+
+  size_t n = s.length();
+  if (n > ENOW_TEXT_MAX) n = ENOW_TEXT_MAX;
+
+  memcpy(msg.text, s.c_str(), n);
+  msg.text[n] = '\0';
+  msg.len = (uint16_t)n;
+
+  // SEND FULL STRUCT (like heartbeat)
+  esp_err_t res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+
+  if (res != ESP_OK) {
+    Serial.printf("NODE: Encrypted text send FAIL (err=%d)\n", (int)res);
+    return false;
+  }
+
+  return true;
+}
+
+bool WiFiOps::sendBroadcastStringPlain(const String& s) {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+
+  static const uint8_t bcast_mac[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+
+  if (!esp_now_is_peer_exist(bcast_mac)) {
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, bcast_mac, 6);
+    peerInfo.channel = 0;       // follow current home channel
+    peerInfo.encrypt = false;   // plaintext broadcast
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+      Logger::log(WARN_MSG, "NODE: Failed to add broadcast peer");
+      return false;
+    }
+  }
+
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_TEXT;
+  msg.counter = 0;
+
+  size_t n = s.length();
+  if (n > ENOW_TEXT_MAX) n = ENOW_TEXT_MAX;
+
+  memcpy(msg.text, s.c_str(), n);
+  msg.text[n] = '\0';
+  msg.len = (uint16_t)n;
+
+  esp_err_t res = esp_now_send(bcast_mac, (uint8_t*)&msg, sizeof(msg));
+
+  if (res != ESP_OK) {
+    Serial.printf("NODE: Broadcast plaintext send FAIL (err=%d)\n", (int)res);
+    return false;
+  }
+
+  return true;
+}
+
+bool WiFiOps::parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out) {
+  const char* line = msg.text;   // <-- no copy
+  int start = 0;
+  int fieldIndex = 0;
+
+  String fields[6];
+
+  while (fieldIndex < 6) {
+    const char* comma = strchr(line + start, ',');
+
+    if (!comma) {
+      fields[fieldIndex++] = String(line + start);
+      break;
+    }
+
+    fields[fieldIndex++] = String(line + start).substring(0, comma - (line + start));
+    start = (comma - line) + 1;
+  }
+
+  if (fieldIndex != 6) return false;
+
+  out.bssid    = fields[0];
+  out.essid    = fields[1];
+  out.security = fields[2];
+  out.channel  = fields[3].toInt();
+  out.rssi     = fields[4].toInt();
+  out.type     = fields[5];
+
+  return true;
+}
+
+void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+  extern WiFiOps wifi_ops;
+
+  if (!info || !data || len < (int)sizeof(enow_text_msg_t)) return;
+
+  enow_text_msg_t msg;
+  memcpy(&msg, data, sizeof(msg));
+
+  if (memcmp(msg.magic, MAGIC, 4) != 0) return;
+
+  const int rssi = (info->rx_ctrl) ? info->rx_ctrl->rssi : 0;
+
+  char srcMacStr[18];
+  utils.macToStr(info->src_addr, srcMacStr);
+
+  if (wifi_ops.run_mode == CORE_MODE) {
+    if (msg.type == MSG_CORE_REQUEST) { // Receive Probe
+      Serial.printf("CORE: RX CORE_REQUEST from %s | RSSI %d dBm\n", srcMacStr, rssi);
+
+      wifi_ops.sendCoreReply(info->src_addr);
+
+      if (!wifi_ops.addPeerWithMode(info->src_addr, true, lmk)) {
+        Logger::log(WARN_MSG, "CORE: Failed to add ENCRYPTED peer for NODE");
+      } else {
+        Serial.printf("CORE: Encrypted peer ready for %s\n", srcMacStr);
+      }
+      return;
+    }
+    else if (msg.type == MSG_HEARTBEAT) { // Receive Heartbeat
+      Serial.printf("CORE: RX HEARTBEAT from %s | RSSI %d dBm | #%lu\n",
+                    srcMacStr, rssi, (unsigned long)msg.counter);
+      return;
+    }
+    else if (msg.type == MSG_TEXT) { // Receive Data
+      const enow_text_msg_t* t = (const enow_text_msg_t*)data;
+      if (t->len <= ENOW_TEXT_MAX) {
+        Serial.printf("CORE: RX WARDRV TEXT from %s: %s\n", srcMacStr, t->text);
+        WardriveRecord rec;
+        if (wifi_ops.parseWardriveLine(*t, rec)) {
+
+          // Check for new entry
+          uint8_t bssid[6] = {0};
+          utils.convertMacStringToUint8(rec.bssid, bssid);
+          if (wifi_ops.seen_mac(bssid))
+            return;
+
+          // Save new entry
+          wifi_ops.save_mac(bssid);
+
+          // Save line to file
+          String type = "WIFI";
+          if (rec.type == "B")
+            type = "BLE";
+          String wardrive_line = rec.bssid + "," + rec.essid + "," + rec.security + "," + gps.getDatetime() + "," + (String)rec.channel + "," + (String)rec.rssi + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + "," + type;
+          Logger::log(GUD_MSG, wardrive_line);
+          if (gps.getFixStatus()) {
+            // Update stats
+            if (type == "WIFI") {
+              wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
+              wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
+
+              if (rec.channel > 14) {
+                wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
+              } else {
+                wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
+              }
+            }
+            else if (type == "BLE") {
+              wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+
+              wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+            }
+            buffer.append(wardrive_line + "\n");
+          }
+        }
+      } else {
+        Logger::log(WARN_MSG, "CORE: RX WARDRV TEXT: text len: " + (String)t->len + " > ENOW_TEXT_MAX");
+      }
+      return;
+    }
+    else {
+      const enow_text_msg_t* t = (const enow_text_msg_t*)data;
+      Serial.printf("CORE: RX TEXT from %s: %s\n", srcMacStr, t->text);
+    }
+  }
+  else if (wifi_ops.run_mode == NODE_MODE) {
+    if (msg.type == MSG_CORE_REPLY) { // Receive Probe Reply
+      memcpy(g_core_mac, info->src_addr, 6);
+      g_have_core = true;
+
+      char coreStr[18];
+      utils.macToStr(g_core_mac, coreStr);
+      Serial.printf("NODE: Learned CORE MAC (plaintext reply): %s | RSSI %d dBm\n", coreStr, rssi);
+
+      // Add encrypted peer for core now
+      if (!wifi_ops.addPeerWithMode(g_core_mac, true, lmk)) {
+        Logger::log(WARN_MSG, "NODE: Failed to add ENCRYPTED peer for CORE");
+        g_secure_ready = false;
+      } else {
+        g_secure_ready = true;
+        Logger::log(WARN_MSG, "NODE: Encrypted peer ready; switching to encrypted heartbeats...");
+      }
+      return;
+    }
+  }
+}
+
+void WiFiOps::startESPNow() {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+  this->computeKeysFromEnowKey();
+
+  if (esp_now_init() != ESP_OK) {
+    Logger::log(WARN_MSG, "ESP-NOW init failed");
+    return;
+  }
+
+  if (esp_now_set_pmk(pmk) != ESP_OK) {
+    Logger::log(WARN_MSG, "Warning: esp_now_set_pmk failed");
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  if (this->run_mode == CORE_MODE) {
+    Logger::log(STD_MSG, "Role: CORE");
+    Logger::log(STD_MSG, "CORE: Fixed channel " + (String)ESPNOW_CHANNEL + ", Waiting for CORE_REQUEST...\n");
+  }
+  else if (this->run_mode == NODE_MODE) {
+    Logger::log(STD_MSG, "Role: NODE");
+    Logger::log(STD_MSG, "NODE: Fixed channel " + (String)ESPNOW_CHANNEL + ", probing for CORE...\n");
+
+    g_last_req_ms = millis();
+
+    if (this->use_encryption)
+      this->sendCoreRequest();
+  }
+}
+
+void WiFiOps::derive_key_16(const String& s, uint8_t out16[16]) {
+  uint8_t hash[32];
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts(&ctx, 0);
+  mbedtls_sha256_update(&ctx, (const unsigned char*)s.c_str(), s.length());
+  mbedtls_sha256_finish(&ctx, hash);
+  mbedtls_sha256_free(&ctx);
+
+  memcpy(out16, hash, 16); // first 16 bytes
+}
+
+void WiFiOps::computeKeysFromEnowKey() {
+  extern WiFiOps wifi_ops;
+  Logger::log(STD_MSG, "computeKeysFromEnowKey Compute key: " + wifi_ops.esp_now_key);
+  derive_key_16(wifi_ops.esp_now_key + "_pmk", pmk);
+  derive_key_16(wifi_ops.esp_now_key + "_lmk", lmk);
+}
+
 void WiFiOps::setCurrentScanMode(uint8_t scan_mode) {
   this->current_scan_mode = scan_mode;
+}
+
+bool WiFiOps::getHasCore() {
+  return g_have_core;
+}
+
+bool WiFiOps::getSecureReady() {
+  return g_secure_ready;
+}
+
+bool WiFiOps::getNodeReady() {
+  if (!this->use_encryption)
+    return true;
+  else if ((this->getHasCore()) && (this->getSecureReady()))
+    return true;
+
+  return false;
 }
 
 uint8_t WiFiOps::getCurrentScanMode() {
@@ -110,41 +526,45 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
 
   int scan_status = -1;
 
-  // Check GPS status
-  if ((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) {
 
-    scan_status = WiFi.scanComplete();
+  if ((this->run_mode == SOLO_MODE) || (this->run_mode == NODE_MODE)) {
+    // Check GPS status
+    if (((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) || 
+        (this->run_mode == NODE_MODE)) {
 
-    // Pause if scan is running already
-    if (scan_status == WIFI_SCAN_RUNNING) // Scan is still running
-      delay(1);
-    else if (scan_status == WIFI_SCAN_FAILED) { // Scan is failed or not started
-      WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
-      delay(100);
-      if (WiFi.scanComplete() == WIFI_SCAN_FAILED)
-        Logger::log(WARN_MSG, "WiFi scan failed to start!");
-    }
-    else {
-      this->current_net_count = 0;
-      this->current_ble_count = 0;
-      this->current_2g4_count = 0;
-      this->current_5g_count = 0;
+      scan_status = WiFi.scanComplete();
 
-      // Scan has completed and is number of networks found
-      // Handle the scan results
-      this->processWardrive(scan_status);
-
-      // Delete the scan data
-      WiFi.scanDelete();
-
-      // Scan BLE here
-      this->scanBLE();
-
-      while(pBLEScan->isScanning())
+      // Pause if scan is running already
+      if (scan_status == WIFI_SCAN_RUNNING) // Scan is still running
         delay(1);
+      else if (scan_status == WIFI_SCAN_FAILED) { // Scan is failed or not started
+        WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
+        delay(100);
+        if (WiFi.scanComplete() == WIFI_SCAN_FAILED)
+          Logger::log(WARN_MSG, "WiFi scan failed to start!");
+      }
+      else {
+        this->current_net_count = 0;
+        this->current_ble_count = 0;
+        this->current_2g4_count = 0;
+        this->current_5g_count = 0;
 
-      // Start a new scan on all channels
-      WiFi.scanNetworks(true, true, false, 80);
+        // Scan has completed and is number of networks found
+        // Handle the scan results
+        this->processWardrive(scan_status);
+
+        // Delete the scan data
+        WiFi.scanDelete();
+
+        // Scan BLE here
+        this->scanBLE();
+
+        while(pBLEScan->isScanning())
+          delay(1);
+
+        // Start a new scan on all channels
+        WiFi.scanNetworks(true, true, false, 80);
+      }
     }
   }
 
@@ -158,7 +578,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
   // Process results if networks found
   if (networks > 0) {
     for (int i = 0; i < networks; i++) {
-      digitalWrite(LED_PIN, HIGH);
+      if (this->run_mode == SOLO_MODE)
+        digitalWrite(LED_PIN, HIGH);
       display_string = "";
       do_save = false;
       uint8_t *this_bssid_raw = WiFi.BSSID(i);
@@ -170,58 +591,72 @@ void WiFiOps::processWardrive(uint16_t networks) {
 
       this->save_mac(this_bssid_raw);
 
-      this->setCurrentNetCount(this->getCurrentNetCount() + 1);
+      if (this->run_mode == SOLO_MODE) {
+        this->setCurrentNetCount(this->getCurrentNetCount() + 1);
 
-      this->setTotalNetCount(this->getTotalNetCount() + 1);
+        this->setTotalNetCount(this->getTotalNetCount() + 1);
 
-      if (WiFi.channel(i) > 14)
-        this->setCurrent5gCount(this->getCurrent5gCount() + 1);
-      else
-        this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
+        if (WiFi.channel(i) > 14)
+          this->setCurrent5gCount(this->getCurrent5gCount() + 1);
+        else
+          this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
 
-      String ssid = WiFi.SSID(i);
-      ssid.replace(",","_");
+        String ssid = WiFi.SSID(i);
+        ssid.replace(",","_");
 
-      if (ssid != "") {
-        display_string.concat(ssid);
-      }
-      else {
-        display_string.concat(this_bssid);
-      }
-
-      if (gps.getFixStatus()) {
-        do_save = true;
-        display_string.concat(" | Lt: " + gps.getLat());
-        display_string.concat(" | Ln: " + gps.getLon());
-      }
-      else {
-        display_string.concat(" | GPS: No Fix");
-      }
-
-      int temp_len = display_string.length();
-
-      #ifdef HAS_SCREEN
-        for (int i = 0; i < 40 - temp_len; i++)
-        {
-          display_string.concat(" ");
+        if (ssid != "") {
+          display_string.concat(ssid);
         }
-        
-        //display_obj.display_buffer->add(display_string);
-      #endif
+        else {
+          display_string.concat(this_bssid);
+        }
+
+        if (gps.getFixStatus()) {
+          do_save = true;
+          display_string.concat(" | Lt: " + gps.getLat());
+          display_string.concat(" | Ln: " + gps.getLon());
+        }
+        else {
+          display_string.concat(" | GPS: No Fix");
+        }
+
+        int temp_len = display_string.length();
+
+        #ifdef HAS_SCREEN
+          for (int i = 0; i < 40 - temp_len; i++)
+          {
+            display_string.concat(" ");
+          }
+          
+          //display_obj.display_buffer->add(display_string);
+        #endif
 
 
-      String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
-      Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
+        String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
+        Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
-      digitalWrite(LED_PIN, LOW);
+        if (this->run_mode == SOLO_MODE)
+          digitalWrite(LED_PIN, LOW);
 
-      if (do_save) {
-        buffer.append(wardrive_line + "\n");
+        if (do_save) {
+          buffer.append(wardrive_line + "\n");
+        }
+      }
+      else if (this->run_mode == NODE_MODE) {
+        String ssid = WiFi.SSID(i);
+        ssid.replace(",","_");
+        String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
+        Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
+        if (this->use_encryption)
+          this->sendEncryptedStringToCore(enow_line);
+        else
+          this->sendBroadcastStringPlain(enow_line);
       }
     }
   }
 
-  digitalWrite(LED_PIN, LOW);
+  if (this->run_mode == SOLO_MODE)
+    digitalWrite(LED_PIN, LOW);
 }
 
 bool WiFiOps::mac_cmp(struct mac_addr addr1, struct mac_addr addr2) {
@@ -425,12 +860,12 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
   }
 
   // Extract AP credentials
-  const char* ssid = doc["ssid"];
-  const char* password = doc["password"];
-  this->user_ap_ssid = doc["ssid"].as<String>();
-  this->user_ap_password = doc["password"].as<String>();
-  this->wigle_user = doc["wigle_user"].as<String>();
-  this->wigle_token = doc["wigle_token"].as<String>();
+  const char* ssid = doc["s"];
+  const char* password = doc["p"];
+  this->user_ap_ssid = doc["s"].as<String>();
+  this->user_ap_password = doc["p"].as<String>();
+  this->wigle_user = doc["wu"].as<String>();
+  this->wigle_token = doc["wt"].as<String>();
 
   Logger::log(STD_MSG, "Attempting to connect with: ");
   Logger::log(STD_MSG, ssid);
@@ -510,8 +945,8 @@ bool WiFiOps::backendUpload(String filePath) {
     deserializeJson(doc, configFile);
     configFile.close();
 
-    String username = doc["wigle_user"] | "";
-    String token = doc["wigle_token"] | "";
+    String username = doc["wu"] | "";
+    String token = doc["wt"] | "";
     if (username.isEmpty() || token.isEmpty()) {
       fileToUpload.close();
       display.clearScreen();
@@ -652,7 +1087,23 @@ void WiFiOps::serveConfigPage() {
         Password: <input type="password" name="password"><br>
         WiGLE API Name: <input type="text" name="wigle_user"><br>
         WiGLE API Token: <input type="password" name="wigle_token"><br>
+        ENOW Key: <input type="text" name="enow_key"><br><br>
+
+        <h3>Device Mode</h3>
+        <input type="radio" id="solo" name="device_mode" value="solo">
+        <label for="solo">Solo</label><br>
+
+        <input type="radio" id="core" name="device_mode" value="core">
+        <label for="core">Core</label><br>
+
+        <input type="radio" id="node" name="device_mode" value="node">
+        <label for="node">Node</label><br><br>
+
         <input type="submit" value="Save"><br><br>
+
+        <h3>Use Encryption</h3>
+        <input type="checkbox" id="use_encryption" name="use_encryption" value="true">
+        <br>
       </form>
       <h2>Files on SD Card</h2>
     )rawliteral";
@@ -686,54 +1137,95 @@ void WiFiOps::serveConfigPage() {
       //String ssid = server.arg("ssid");
       //String password = server.arg("password");
 
-      DynamicJsonDocument doc(256);
+      DynamicJsonDocument doc(512);
       //doc["ssid"] = ssid;
       //doc["password"] = password;
 
       if (server.hasArg("ssid")) {
         if (server.arg("ssid") != "") {
-          doc["ssid"] = server.arg("ssid");
+          doc["s"] = server.arg("ssid");
           this->user_ap_ssid = server.arg("ssid");
         } else {
-          doc["ssid"] = this->user_ap_ssid;
+          doc["s"] = this->user_ap_ssid;
         }
       } else {
-        doc["ssid"] = this->user_ap_ssid;
+        doc["s"] = this->user_ap_ssid;
       }
       if (server.hasArg("password")) {
         if (server.arg("password") != "") {
-          doc["password"] = server.arg("password");
+          doc["p"] = server.arg("password");
           this->user_ap_password = server.arg("password");
         } else {
-          doc["password"] = this->user_ap_password;
+          doc["p"] = this->user_ap_password;
         }
       } else {
-        doc["password"] = this->user_ap_password;
+        doc["p"] = this->user_ap_password;
       }
       if (server.hasArg("wigle_user")) {
         if (server.arg("wigle_user") != "") {
-          doc["wigle_user"] = server.arg("wigle_user");
+          doc["wu"] = server.arg("wigle_user");
           this->wigle_user = server.arg("wigle_user");
         }
         else {
-          doc["wigle_user"] = this->wigle_user;
+          doc["wu"] = this->wigle_user;
         }
       } else {
-        doc["wigle_user"] = this->wigle_user;
+        doc["wu"] = this->wigle_user;
       }
       if (server.hasArg("wigle_token")) {
         if (server.arg("wigle_token") != "") {
-          doc["wigle_token"] = server.arg("wigle_token");
+          doc["wt"] = server.arg("wigle_token");
           this->wigle_token = server.arg("wigle_token");
         } else {
-          doc["wigle_token"] = this->wigle_token;
+          doc["wt"] = this->wigle_token;
         }
       } else {
-        doc["wigle_token"] = this->wigle_token;
+        doc["wt"] = this->wigle_token;
+      }
+      if (server.hasArg("enow_key")) {
+        if (server.arg("enow_key") != "") {
+          doc["ek"] = server.arg("enow_key");
+          this->esp_now_key = server.arg("enow_key");
+        } else {
+          doc["ek"] = this->esp_now_key;
+        }
+      } else {
+        doc["ek"] = this->esp_now_key;
+      }
+      if (server.hasArg("device_mode")) {
+        if (server.arg("device_mode") != "") {
+          int mode_arg = 1;
+          if (server.arg("device_mode") == "solo")
+            mode_arg = SOLO_MODE;
+          else if (server.arg("device_mode") == "node")
+            mode_arg = NODE_MODE;
+          else if (server.arg("device_mode") == "core")
+            mode_arg = CORE_MODE;
+
+          doc["m"] = mode_arg;
+          this->run_mode = mode_arg;
+          settings.saveSetting<bool>("m", this->run_mode, true);
+        } else {
+          doc["m"] = this->run_mode;
+        }
+      } else {
+        doc["m"] = this->run_mode;
+      }
+      if (server.hasArg("use_encryption")) {
+        if (server.arg("use_encryption") == "true") {
+          doc["e"] = true;
+          this->use_encryption = true;
+        } else {
+          doc["e"] = settings.loadSetting<bool>("e");
+        }
+      } else {
+        doc["e"] = settings.loadSetting<bool>("e");
       }
 
       Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
       Logger::log(STD_MSG, "Wigle User: " + this->wigle_user);
+      Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
+      Logger::log(STD_MSG, "Mode: " + (String)this->run_mode);
 
       File configFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
       if (configFile) {
@@ -801,8 +1293,8 @@ void WiFiOps::serveConfigPage() {
     deserializeJson(doc, configFile);
     configFile.close();
 
-    String username = doc["wigle_user"] | "";
-    String token = doc["wigle_token"] | "";
+    String username = doc["wu"] | "";
+    String token = doc["wt"] | "";
     if (username.isEmpty() || token.isEmpty()) {
       fileToUpload.close();
       server.send(500, "text/plain", "Missing WiGLE credentials.");
@@ -931,6 +1423,8 @@ void WiFiOps::showCountdown() {
 bool WiFiOps::begin(bool skip_admin) {
   this->current_scan_mode = WIFI_STANDBY;
 
+  this->run_mode = settings.loadSetting<int>("m");
+
   if (!skip_admin) {
     // Init WiFi
     this->initWiFi();
@@ -996,12 +1490,41 @@ bool WiFiOps::begin(bool skip_admin) {
     this->deinitWiFi();
   }
 
+  // Sanity check for modes and keys
+  if (this->esp_now_key != "") {
+    if (!settings.saveSetting<bool>("ek", this->esp_now_key))
+      Logger::log(WARN_MSG, "Failed to save setting");
+  }
+  else
+    this->esp_now_key = settings.loadSetting<String>("ek");
+
+  //this->run_mode = settings.loadSetting<int>("m");
+  this->use_encryption = settings.loadSetting<bool>("e");
+
+  Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
+
+  if (this->run_mode == SOLO_MODE)
+    Logger::log(STD_MSG, "Mode: SOLO");
+  if (this->run_mode == NODE_MODE)
+    Logger::log(STD_MSG, "Mode: NODE");
+  if (this->run_mode == CORE_MODE)
+    Logger::log(STD_MSG, "Mode: CORE");
+
+  if (this->use_encryption)
+    Logger::log(STD_MSG, "Encryption: Enabled");
+  else
+    Logger::log(STD_MSG, "Encryption: Disabled");
+
   this->initWiFi();
 
   // Init NimBLE
   this->initBLE(); // NimBLE needs to not be init in order to upload to wigle
 
-  startLog(LOG_FILE_NAME);
+  if (this->run_mode != SOLO_MODE)
+    this->startESPNow();
+
+  if ((this->run_mode == SOLO_MODE) || (this->run_mode == CORE_MODE))
+    startLog(LOG_FILE_NAME);
 
   this->init_time = millis();
 
@@ -1011,4 +1534,16 @@ bool WiFiOps::begin(bool skip_admin) {
 void WiFiOps::main(uint32_t currentTime) {
   if (this->current_scan_mode == WIFI_WARDRIVING)
     this->runWardrive(currentTime);
+
+  if ((this->run_mode == NODE_MODE) && (!g_have_core) && (this->use_encryption)) {
+    if (currentTime - g_last_req_ms >= g_req_interval_ms) {
+      g_last_req_ms = currentTime;
+      this->sendCoreRequest();
+
+      // simple backoff: double up to max
+      uint32_t nextInterval = g_req_interval_ms * 2;
+      g_req_interval_ms = (nextInterval > REQ_MAX_MS) ? REQ_MAX_MS : nextInterval;
+    }
+    return;
+  }
 }

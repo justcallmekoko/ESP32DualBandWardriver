@@ -10,6 +10,7 @@
 #include "display.h"
 #include "SDInterface.h"
 
+#include <esp_now.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WiFiClientSecure.h>
@@ -18,6 +19,7 @@
 #include <ArduinoJson.h>
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
+#include "mbedtls/sha256.h"
 
 #include <NimBLEDevice.h> // 2.3.0
 
@@ -33,6 +35,23 @@ extern WebServer server;
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
+
+typedef struct __attribute__((packed)) {
+  char     magic[4];               // "ENOW"
+  uint8_t  type;                   // MSG_TEXT
+  uint32_t counter;                // heartbeat counter (valid for MSG_HEARTBEAT)
+  uint16_t len;                    // number of bytes in text (not including NUL)
+  char     text[ENOW_TEXT_MAX + 1];  // +1 for NUL terminator
+} enow_text_msg_t;
+
+struct WardriveRecord {
+  String bssid;
+  String essid;
+  String security;
+  int    channel;
+  int    rssi;
+  String type;
+};
 
 class WiFiOps
 {
@@ -81,11 +100,22 @@ class WiFiOps
     void shutdownAccessPoint(bool ap_active = true);
 
   public:
+    #ifdef CORE
+      int run_mode = CORE_MODE;
+    #elif defined(NODE)
+      int run_mode = NODE_MODE;
+    #else
+      int run_mode = SOLO_MODE;
+    #endif
+
     uint mac_history_cursor = 0;
     bool clientConnected = false;
     bool serving = false;
     uint32_t last_web_client_activity;
     uint32_t last_timer;
+    bool use_encryption = false;
+
+    String esp_now_key = "";
 
     bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
@@ -112,10 +142,26 @@ class WiFiOps
     uint32_t getCurrentBLECount();
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
+    void startESPNow();
+    bool getHasCore();
+    bool getSecureReady();
+    bool getNodeReady();
+    bool sendEncryptedStringToCore(const String& s);
+    bool sendBroadcastStringPlain(const String& s);
+    bool parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out);
 
     void startAccessPoint();
     void serveConfigPage();
     bool monitorAP(unsigned long timeoutMs = WEB_PAGE_TIMEOUT);
+
+    static void setFixedChannel(uint8_t ch);
+    static bool addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]);
+    static void sendCoreRequest();
+    static void sendCoreReply(const uint8_t* destMac);
+    static void sendHeartbeat();
+    static void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
+    static void derive_key_16(const String& s, uint8_t out16[16]);
+    static void computeKeysFromEnowKey();
 
 };
 

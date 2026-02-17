@@ -53,6 +53,7 @@ struct Menu {
 class UI {
   private:
     Menu sd_file_menu;
+    Menu mode_menu;
     Menu action_menu;
 
     uint32_t init_time;

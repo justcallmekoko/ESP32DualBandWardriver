@@ -166,6 +166,7 @@ class Utils {
     String macToString(const Station& station);
     String macToString(uint8_t macAddr[6]);
     bool stringToMac(const char* macStr, uint8_t bytes[6]);
+    static void macToStr(const uint8_t* mac, char* out18);
     void convertMacStringToUint8(const String& macStr, uint8_t macAddr[6]);
     const char* getManufacturer(const char *addr);
     String replaceOUIWithManufacturer(const char *sta_addr);
