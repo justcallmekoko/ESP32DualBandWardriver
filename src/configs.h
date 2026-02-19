@@ -92,8 +92,9 @@
 #define WEB_PAGE_TIMEOUT 60 * 1000 // 60 seconds
 #define TIMER_UPDATE 1 * 1000 // 1 second
 #define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
-#define WIFI_CONFIG "/wifi_config.json"
+#define WIFI_CONFIG "/settings.json"
 #define LOG_FILE_NAME "wardrive"
+#define SETTING_SANITY "wu"
 
 #define SMALL_CHAR_HEIGHT 8
 
