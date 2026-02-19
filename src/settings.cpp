@@ -14,8 +14,8 @@ bool Settings::begin() {
 
   //SPIFFS.remove("/settings.json"); // NEED TO REMOVE THIS LINE
 
-  if (SPIFFS.exists("/settings.json")) {
-    settingsFile = SPIFFS.open("/settings.json", FILE_READ);
+  if (SPIFFS.exists(WIFI_CONFIG)) {
+    settingsFile = SPIFFS.open(WIFI_CONFIG, FILE_READ);
     
     if (!settingsFile) {
       settingsFile.close();
@@ -35,7 +35,7 @@ bool Settings::begin() {
   }
 
   String json_string;
-  DynamicJsonDocument jsonBuffer(1024);
+  DynamicJsonDocument jsonBuffer(2048);
   DeserializationError error = deserializeJson(jsonBuffer, settingsFile);
   serializeJson(jsonBuffer, json_string);
 
@@ -44,15 +44,47 @@ bool Settings::begin() {
   return true;
 }
 
+void Settings::wipeSPIFFS() {
+  Logger::log(WARN_MSG, "[SPIFFS] Wiping filesystem...");
+
+  File root = SPIFFS.open("/");
+  if (!root || !root.isDirectory()) {
+    Logger::log(WARN_MSG, "[SPIFFS] Failed to open root");
+    return;
+  }
+
+  File file = root.openNextFile();
+  while (file) {
+    String path = String(file.name());
+
+    Logger::log(WARN_MSG, "[SPIFFS] Deleting: " + (String)path);
+
+    file.close();  // MUST close before removing
+
+    if (SPIFFS.remove("/" + path)) {
+      Logger::log(WARN_MSG, "  -> Deleted");
+    } else {
+      Logger::log(WARN_MSG, "  -> Delete failed");
+    }
+
+    file = root.openNextFile();
+  }
+
+  Logger::log(WARN_MSG, "[SPIFFS] Wipe complete.");
+}
+
 template <typename T>
 T Settings::loadSettingMin(String name) {}
 
 template<>
 int Settings::loadSettingMin<int>(String name) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -68,10 +100,13 @@ T Settings::loadSettingMax(String name) {}
 
 template<>
 int Settings::loadSettingMax<int>(String name) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -88,10 +123,13 @@ T Settings::loadSetting(String key) {}
 // Get type int settings
 template<>
 int Settings::loadSetting<int>(String key) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -111,10 +149,13 @@ template<>
 String Settings::loadSetting<String>(String key) {
   //return this->json_settings_string;
   
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Serial.println("\nCould not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Serial.println("\nCould not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -132,7 +173,7 @@ String Settings::loadSetting<String>(String key) {
 // Get type bool settings
 template<>
 bool Settings::loadSetting<bool>(String key) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {
     Logger::log(WARN_MSG, "Could not parse json to load");
@@ -153,10 +194,13 @@ bool Settings::loadSetting<bool>(String key) {
 //Get type uint8_t settings
 template<>
 uint8_t Settings::loadSetting<uint8_t>(String key) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -172,7 +216,7 @@ T Settings::saveSetting(String key, bool value) {}
 
 template<>
 bool Settings::saveSetting<bool>(String key, bool value) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {
     Logger::log(WARN_MSG, "Could not parse json to save");
@@ -186,7 +230,7 @@ bool Settings::saveSetting<bool>(String key, bool value) {
     if (json["Settings"][i]["name"].as<String>() == key) {
       json["Settings"][i]["value"] = value;
 
-      File settingsFile = SPIFFS.open("/settings.json", FILE_WRITE);
+      File settingsFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
 
       if (!settingsFile) {
         Logger::log(WARN_MSG, "Failed to create settings file");
@@ -223,7 +267,7 @@ T Settings::saveSetting(String key, int value, bool is_int) {}
 
 template<>
 bool Settings::saveSetting<bool>(String key, int value, bool is_int) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {
     Logger::log(WARN_MSG, "Could not parse json to save");
@@ -237,7 +281,7 @@ bool Settings::saveSetting<bool>(String key, int value, bool is_int) {
     if (json["Settings"][i]["name"].as<String>() == key) {
       json["Settings"][i]["value"] = value;
 
-      File settingsFile = SPIFFS.open("/settings.json", FILE_WRITE);
+      File settingsFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
 
       if (!settingsFile) {
         Logger::log(WARN_MSG, "Failed to create settings file");
@@ -273,7 +317,7 @@ T Settings::saveSetting(String key, String value) {}
 
 template<>
 bool Settings::saveSetting<bool>(String key, String value) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
   if (deserializeJson(json, this->json_settings_string)) {
     Logger::log(WARN_MSG, "Could not parse json to save");
@@ -287,7 +331,7 @@ bool Settings::saveSetting<bool>(String key, String value) {
     if (json["Settings"][i]["name"].as<String>() == key) {
       json["Settings"][i]["value"] = value;
 
-      File settingsFile = SPIFFS.open("/settings.json", FILE_WRITE);
+      File settingsFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
 
       if (!settingsFile) {
         Logger::log(WARN_MSG, "Failed to create settings file");
@@ -319,10 +363,13 @@ bool Settings::saveSetting<bool>(String key, String value) {
 }
 
 bool Settings::toggleSetting(String key) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -344,44 +391,60 @@ bool Settings::toggleSetting(String key) {
 }
 
 String Settings::setting_index_to_name(int i) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   return json["Settings"][i]["name"];
 }
 
 int Settings::getNumberSettings() {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
 
   return json["Settings"].size();
 }
 
 String Settings::getSettingType(String key) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, this->json_settings_string)) {
-    Logger::log(WARN_MSG, "Could not parse json");
+  DeserializationError error = deserializeJson(json, this->json_settings_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json: ");
+    Serial.println(error.f_str());
   }
   
   for (int i = 0; i < json["Settings"].size(); i++) {
     if (json["Settings"][i]["name"].as<String>() == key)
       return json["Settings"][i]["type"];
   }
+
+  return "";
 }
 
 void Settings::printJsonSettings(String json_string) {
-  DynamicJsonDocument json(1024); // ArduinoJson v6
+  DynamicJsonDocument json(2048); // ArduinoJson v6
 
-  if (deserializeJson(json, json_string)) {
-    Logger::log(WARN_MSG, "Could not parse json to print");
+  DeserializationError error = deserializeJson(json, json_string);
+
+  if (error) {
+    Logger::log(WARN_MSG, "Could not parse json to print: ");
+    Serial.println(error.f_str());
   }
+
+  Logger::log(WARN_MSG, "DynamicJsonDocument Capacity: " + (String)json.capacity() + " vs json_string Len: " + (String)json_string.length());
   
   Serial.println("Settings\n----------------------------------------------");
   for (int i = 0; i < json["Settings"].size(); i++) {
@@ -394,8 +457,11 @@ void Settings::printJsonSettings(String json_string) {
 
 bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, String typeStr, String name) {
   Logger::log(STD_MSG, "Creating default settings file: settings.json");
-  
-  File settingsFile = fs.open("/settings.json", FILE_WRITE);
+
+  if (!spec)
+    this->wipeSPIFFS();
+      
+  File settingsFile = fs.open(WIFI_CONFIG, FILE_WRITE);
 
   if (!settingsFile) {
     Logger::log(WARN_MSG, "Failed to create settings file");
@@ -407,48 +473,6 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
   if (!spec) {
 
     DynamicJsonDocument jsonBuffer(1024);
-
-    //jsonBuffer["Settings"][0]["name"] = CLICK_NAME;
-    //jsonBuffer["Settings"][0]["type"] = "bool";
-    //jsonBuffer["Settings"][0]["value"] = false;
-    //jsonBuffer["Settings"][0]["range"]["min"] = false;
-    //jsonBuffer["Settings"][0]["range"]["max"] = true;
-
-    //jsonBuffer["Settings"][1]["name"] = ALARM_NAME;
-    //jsonBuffer["Settings"][1]["type"] = "bool";
-    //jsonBuffer["Settings"][1]["value"] = false;
-    //jsonBuffer["Settings"][1]["range"]["min"] = false;
-    //jsonBuffer["Settings"][1]["range"]["max"] = true;
-
-    //jsonBuffer["Settings"][2]["name"] = VIBE_NAME;
-    //jsonBuffer["Settings"][2]["type"] = "bool";
-    //jsonBuffer["Settings"][2]["value"] = false;
-    //jsonBuffer["Settings"][2]["range"]["min"] = false;
-    //jsonBuffer["Settings"][2]["range"]["max"] = true;
-
-    //jsonBuffer["Settings"][3]["name"] = SEN_SUB;
-    //jsonBuffer["Settings"][3]["type"] = "int";
-    //jsonBuffer["Settings"][3]["value"] = MED_SENS;
-    //jsonBuffer["Settings"][3]["range"]["min"] = LOW_SENS;
-    //jsonBuffer["Settings"][3]["range"]["max"] = HIGH_SENS;
-
-    //jsonBuffer["Settings"][4]["name"] = SEN_2G4;
-    //jsonBuffer["Settings"][4]["type"] = "int";
-    //jsonBuffer["Settings"][4]["value"] = MED_SENS;
-    //jsonBuffer["Settings"][4]["range"]["min"] = LOW_SENS;
-    //jsonBuffer["Settings"][4]["range"]["max"] = HIGH_SENS;
-
-    //jsonBuffer["Settings"][5]["name"] = SEN_5G8;
-    //jsonBuffer["Settings"][5]["type"] = "int";
-    //jsonBuffer["Settings"][5]["value"] = MED_SENS;
-    //jsonBuffer["Settings"][5]["range"]["min"] = LOW_SENS;
-    //jsonBuffer["Settings"][5]["range"]["max"] = HIGH_SENS;
-
-    //jsonBuffer["Settings"][6]["name"] = TIME_NAME;
-    //jsonBuffer["Settings"][6]["type"] = "bool";
-    //jsonBuffer["Settings"][6]["value"] = false;
-    //jsonBuffer["Settings"][6]["range"]["min"] = false;
-    //jsonBuffer["Settings"][6]["range"]["max"] = true;
 
     jsonBuffer["Settings"][0]["name"] = "SavePCAP";
     jsonBuffer["Settings"][0]["type"] = "bool";
@@ -462,6 +486,48 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
     jsonBuffer["Settings"][1]["range"]["min"] = "";
     jsonBuffer["Settings"][1]["range"]["max"] = "";
 
+    jsonBuffer["Settings"][2]["name"] = "e";
+    jsonBuffer["Settings"][2]["type"] = "bool";
+    jsonBuffer["Settings"][2]["value"] = false;
+    jsonBuffer["Settings"][2]["range"]["min"] = false;
+    jsonBuffer["Settings"][2]["range"]["max"] = true;
+
+    jsonBuffer["Settings"][3]["name"] = "m";
+    jsonBuffer["Settings"][3]["type"] = "Int";
+    jsonBuffer["Settings"][3]["value"] = 1;
+    jsonBuffer["Settings"][3]["range"]["min"] = 1;
+    jsonBuffer["Settings"][3]["range"]["max"] = 10;
+
+    jsonBuffer["Settings"][4]["name"] = "ek";
+    jsonBuffer["Settings"][4]["type"] = "String";
+    jsonBuffer["Settings"][4]["value"] = "";
+    jsonBuffer["Settings"][4]["range"]["min"] = "";
+    jsonBuffer["Settings"][4]["range"]["max"] = "";
+
+    jsonBuffer["Settings"][5]["name"] = "wu";
+    jsonBuffer["Settings"][5]["type"] = "String";
+    jsonBuffer["Settings"][5]["value"] = "";
+    jsonBuffer["Settings"][5]["range"]["min"] = "";
+    jsonBuffer["Settings"][5]["range"]["max"] = "";
+
+    jsonBuffer["Settings"][6]["name"] = "wt";
+    jsonBuffer["Settings"][6]["type"] = "String";
+    jsonBuffer["Settings"][6]["value"] = "";
+    jsonBuffer["Settings"][6]["range"]["min"] = "";
+    jsonBuffer["Settings"][6]["range"]["max"] = "";
+
+    jsonBuffer["Settings"][7]["name"] = "p";
+    jsonBuffer["Settings"][7]["type"] = "String";
+    jsonBuffer["Settings"][7]["value"] = "";
+    jsonBuffer["Settings"][7]["range"]["min"] = "";
+    jsonBuffer["Settings"][7]["range"]["max"] = "";
+
+    jsonBuffer["Settings"][8]["name"] = "s";
+    jsonBuffer["Settings"][8]["type"] = "String";
+    jsonBuffer["Settings"][8]["value"] = "";
+    jsonBuffer["Settings"][8]["range"]["min"] = "";
+    jsonBuffer["Settings"][8]["range"]["max"] = "";
+
     if (serializeJson(jsonBuffer, settingsFile) == 0) {
       Logger::log(WARN_MSG, "Failed to write to file");
     }
@@ -471,7 +537,7 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
   }
 
   else {
-    DynamicJsonDocument json(1024); // ArduinoJson v6
+    DynamicJsonDocument json(2048); // ArduinoJson v6
 
     if (deserializeJson(json, this->json_settings_string)) {
       Logger::log(WARN_MSG, "Could not parse json to create new setting");

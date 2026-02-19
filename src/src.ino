@@ -55,6 +55,14 @@ void setup() {
   // Load settings
   settings.begin();
 
+  if (settings.getSettingType(SETTING_SANITY) == "") {
+    Logger::log(WARN_MSG, "Current settings format not supported. Installing new default settings...");
+    settings.createDefaultSettings(SPIFFS);
+  }
+  else {
+    Logger::log(GUD_MSG, "Current settings format supported");
+  }
+
   // Init our buffer for writing logs
   buffer = Buffer();
 

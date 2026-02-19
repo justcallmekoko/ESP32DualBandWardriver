@@ -518,6 +518,7 @@ uint32_t WiFiOps::getCurrentBLECount() {
 
 void WiFiOps::scanBLE() {
   //Logger::log(STD_MSG, "Starting BLE scan...");
+  pBLEScan->clearResults();
   pBLEScan->start(BLE_SCAN_DURATION, false, false);
   //Logger::log(STD_MSG, "Completed BLE scan");
 }
@@ -839,42 +840,19 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
 
   display.tft->print("Joining WiFi: ");
 
-  // Check if can open file
-  File configFile = SPIFFS.open(WIFI_CONFIG, "r");
-  if (!configFile) {
-    Logger::log(WARN_MSG, "Failed to open config file.");
-    display.tft->println("\nCould not get WiFi creds file");
-    return false;
-  }
-
-  // Get json object ready
-  DynamicJsonDocument doc(256);
-  DeserializationError error = deserializeJson(doc, configFile);
-  configFile.close();
-
-  // Couldn't parse json from file
-  if (error) {
-    Logger::log(WARN_MSG, "Failed to parse config file.");
-    display.tft->println("\nCould not parse WiFi creds");
-    return false;
-  }
-
-  // Extract AP credentials
-  const char* ssid = doc["s"];
-  const char* password = doc["p"];
-  this->user_ap_ssid = doc["s"].as<String>();
-  this->user_ap_password = doc["p"].as<String>();
-  this->wigle_user = doc["wu"].as<String>();
-  this->wigle_token = doc["wt"].as<String>();
+  this->user_ap_ssid = settings.loadSetting<String>("s");
+  this->user_ap_password = settings.loadSetting<String>("p");
+  this->wigle_user = settings.loadSetting<String>("wu");
+  this->wigle_token = settings.loadSetting<String>("wt");
 
   Logger::log(STD_MSG, "Attempting to connect with: ");
-  Logger::log(STD_MSG, ssid);
-  display.tft->print(ssid);
+  Logger::log(STD_MSG, this->user_ap_ssid);
+  display.tft->print(this->user_ap_ssid);
   display.tft->println("...");
 
   // Connect to WiFi with AP credentials
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(this->user_ap_ssid.c_str(), this->user_ap_password.c_str());
 
   // Wait while we connect
   unsigned long start = millis();
@@ -888,7 +866,7 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
     display.clearScreen();
     display.tft->setCursor(0, 0);
     display.tft->print("Connected: ");
-    display.tft->println(ssid);
+    display.tft->println(this->user_ap_ssid);
     display.tft->print("IP: ");
     display.tft->println(WiFi.localIP());
     Logger::log(GUD_MSG, "WiFi connected!");
@@ -940,13 +918,8 @@ bool WiFiOps::backendUpload(String filePath) {
     }
 
     // Load credentials
-    File configFile = SPIFFS.open(WIFI_CONFIG, "r");
-    DynamicJsonDocument doc(512);
-    deserializeJson(doc, configFile);
-    configFile.close();
-
-    String username = doc["wu"] | "";
-    String token = doc["wt"] | "";
+    String username = settings.loadSetting<String>("wu");
+    String token = settings.loadSetting<String>("wt");
     if (username.isEmpty() || token.isEmpty()) {
       fileToUpload.close();
       display.clearScreen();
@@ -1134,64 +1107,36 @@ void WiFiOps::serveConfigPage() {
   server.on("/save", HTTP_POST, [this]() {
     this->last_web_client_activity = millis();
     if ((server.hasArg("ssid") && server.hasArg("password")) || (server.hasArg("wigle_user") && server.hasArg("wigle_token"))) {
-      //String ssid = server.arg("ssid");
-      //String password = server.arg("password");
-
-      DynamicJsonDocument doc(512);
-      //doc["ssid"] = ssid;
-      //doc["password"] = password;
-
       if (server.hasArg("ssid")) {
         if (server.arg("ssid") != "") {
-          doc["s"] = server.arg("ssid");
           this->user_ap_ssid = server.arg("ssid");
-        } else {
-          doc["s"] = this->user_ap_ssid;
-        }
-      } else {
-        doc["s"] = this->user_ap_ssid;
-      }
+          settings.saveSetting<bool>("s", this->user_ap_ssid);
+        } 
+      } 
       if (server.hasArg("password")) {
         if (server.arg("password") != "") {
-          doc["p"] = server.arg("password");
           this->user_ap_password = server.arg("password");
-        } else {
-          doc["p"] = this->user_ap_password;
-        }
-      } else {
-        doc["p"] = this->user_ap_password;
-      }
+          settings.saveSetting<bool>("p", this->user_ap_password);
+        } 
+      } 
       if (server.hasArg("wigle_user")) {
         if (server.arg("wigle_user") != "") {
-          doc["wu"] = server.arg("wigle_user");
           this->wigle_user = server.arg("wigle_user");
+          settings.saveSetting<bool>("wu", this->wigle_user);
         }
-        else {
-          doc["wu"] = this->wigle_user;
-        }
-      } else {
-        doc["wu"] = this->wigle_user;
-      }
+      } 
       if (server.hasArg("wigle_token")) {
         if (server.arg("wigle_token") != "") {
-          doc["wt"] = server.arg("wigle_token");
           this->wigle_token = server.arg("wigle_token");
-        } else {
-          doc["wt"] = this->wigle_token;
-        }
-      } else {
-        doc["wt"] = this->wigle_token;
-      }
+          settings.saveSetting<bool>("wt", this->wigle_token);
+        } 
+      } 
       if (server.hasArg("enow_key")) {
         if (server.arg("enow_key") != "") {
-          doc["ek"] = server.arg("enow_key");
           this->esp_now_key = server.arg("enow_key");
-        } else {
-          doc["ek"] = this->esp_now_key;
-        }
-      } else {
-        doc["ek"] = this->esp_now_key;
-      }
+          settings.saveSetting<bool>("ek", this->esp_now_key);
+        } 
+      } 
       if (server.hasArg("device_mode")) {
         if (server.arg("device_mode") != "") {
           int mode_arg = 1;
@@ -1201,42 +1146,24 @@ void WiFiOps::serveConfigPage() {
             mode_arg = NODE_MODE;
           else if (server.arg("device_mode") == "core")
             mode_arg = CORE_MODE;
-
-          doc["m"] = mode_arg;
           this->run_mode = mode_arg;
           settings.saveSetting<bool>("m", this->run_mode, true);
-        } else {
-          doc["m"] = this->run_mode;
-        }
-      } else {
-        doc["m"] = this->run_mode;
-      }
+        } 
+      } 
       if (server.hasArg("use_encryption")) {
         if (server.arg("use_encryption") == "true") {
-          doc["e"] = true;
           this->use_encryption = true;
-        } else {
-          doc["e"] = settings.loadSetting<bool>("e");
-        }
-      } else {
-        doc["e"] = settings.loadSetting<bool>("e");
-      }
+        } 
+      } 
 
       Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
       Logger::log(STD_MSG, "Wigle User: " + this->wigle_user);
       Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
       Logger::log(STD_MSG, "Mode: " + (String)this->run_mode);
 
-      File configFile = SPIFFS.open(WIFI_CONFIG, FILE_WRITE);
-      if (configFile) {
-        serializeJson(doc, configFile);
-        configFile.close();
-        server.send(200, "text/html", "Credentials saved. You can close this window.");
-        this->last_web_client_activity = 0;
-        this->shutdownAccessPoint();
-      } else {
-        server.send(500, "text/plain", "Failed to save credentials.");
-      }
+      server.send(200, "text/html", "Credentials saved. You can close this window.");
+      this->last_web_client_activity = 0;
+      this->shutdownAccessPoint();
     } else {
       server.send(400, "text/plain", "Missing SSID or password.");
     }
