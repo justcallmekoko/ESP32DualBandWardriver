@@ -1453,6 +1453,10 @@ bool WiFiOps::begin(bool skip_admin) {
   if ((this->run_mode == SOLO_MODE) || (this->run_mode == CORE_MODE))
     startLog(LOG_FILE_NAME);
 
+  // Random delay for nodes to stagger channels
+  if (this->run_mode == NODE_MODE)
+    delay(random(100, 5000));
+
   this->init_time = millis();
 
   return true;
