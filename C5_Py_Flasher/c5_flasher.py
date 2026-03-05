@@ -9,6 +9,30 @@ import time
 import shutil
 import argparse
 
+def version_tuple(v):
+    return tuple(int(x) for x in v.split('.') if x.isdigit())
+    
+def ensure_esptool_version(min_version="5.0.1"):
+    try:
+        import esptool
+        installed = esptool.__version__
+    except Exception:
+        installed = None
+
+    if installed is None or version_tuple(installed) < version_tuple(min_version):
+        print(f"Installing/upgrading esptool to >= {min_version} (current: {installed})")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            f"esptool>={min_version}", "--upgrade"
+        ])
+
+        # reload module after install
+        import importlib
+        import esptool
+        importlib.reload(esptool)
+
+    print(f"Using esptool version: {esptool.__version__}")
+
 def ensure_package(pkg):
     try:
         __import__(pkg if pkg != 'gitpython' else 'git')
@@ -20,10 +44,10 @@ try:
     import serial.tools.list_ports
 except ImportError:
     ensure_package('pyserial')
-try:
-    import esptool
-except ImportError:
-    ensure_package('esptool')
+    
+ensure_esptool_version("5.0.1")
+import esptool
+
 try:
     from colorama import Fore, Style
 except ImportError:
@@ -48,6 +72,29 @@ def find_file(name_options, bins_dir):
         if files:
             return files[0]
     return None
+    
+def run_esptool(args, success_msg=None, fail_prefix="esptool failed"):
+    """
+    Runs esptool.main(args) but prevents esptool from terminating this script via sys.exit().
+    Treats exit code 0 as success, non-zero as failure.
+    """
+    try:
+        esptool.main(args)
+        if success_msg:
+            print(success_msg)
+        return True
+    except SystemExit as e:
+        # esptool calls sys.exit(code). code==0 means success.
+        code = e.code if isinstance(e.code, int) else 0
+        if code == 0:
+            if success_msg:
+                print(success_msg)
+            return True
+        print(Fore.RED + f"{fail_prefix} (exit code {code})" + Style.RESET_ALL)
+        return False
+    except Exception as e:
+        print(Fore.RED + f"{fail_prefix}: {e}" + Style.RESET_ALL)
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description="ESP32-C5 Auto Flasher (bins subdir)")
@@ -137,9 +184,27 @@ def main():
     if confirm.strip().lower() != 'y':
         print("Aborting.")
         exit(0)
+        
+    # --- erase flash before flashing ---
+    print(Fore.YELLOW + "Erasing ESP32-C5 flash (this may take a bit)..." + Style.RESET_ALL)
 
-    # Flash using esptool, with offsets for C5
-    esptool_args = [
+    erase_args = [
+        '--chip', 'esp32c5',
+        '--port', serial_port,
+        '--baud', '921600',
+        '--before', 'default_reset',
+        '--after', 'hard_reset',
+        'erase_flash'
+    ]
+
+    if not run_esptool(erase_args, success_msg=Fore.GREEN + "Erase complete!" + Style.RESET_ALL,
+                      fail_prefix="Erase failed"):
+        exit(1)
+
+    # --- now do write_flash ---
+    print(Fore.YELLOW + "Flashing ESP32-C5 with bootloader, partition table, and application..." + Style.RESET_ALL)
+
+    write_args = [
         '--chip', 'esp32c5',
         '--port', serial_port,
         '--baud', '921600',
@@ -150,15 +215,12 @@ def main():
         '0x8000', partitions,
     ]
     if ota_data:
-        esptool_args += ['0xd000', ota_data]
-    esptool_args += ['0x10000', app_bin]
+        write_args += ['0xd000', ota_data]
+    write_args += ['0x10000', app_bin]
 
-    print(Fore.YELLOW + "Flashing ESP32-C5 with bootloader, partition table, and application..." + Style.RESET_ALL)
-    try:
-        esptool.main(esptool_args)
-        print(Fore.GREEN + "Flashing complete!" + Style.RESET_ALL)
-    except Exception as e:
-        print(Fore.RED + f"Flashing failed: {e}" + Style.RESET_ALL)
+    if not run_esptool(write_args, success_msg=Fore.GREEN + "Flashing complete!" + Style.RESET_ALL,
+                      fail_prefix="Flashing failed"):
+        exit(1)
 
 if __name__ == "__main__":
     main()
