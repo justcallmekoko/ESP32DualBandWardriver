@@ -171,12 +171,28 @@ jobs:
       - name: Rename C5 Wardriver ${{ matrix.board.name }} bin
         run: |
           mv ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.ino.bin ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.${{ matrix.board.file_name }}.bin
+          mv ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.ino.bootloader.bin ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/bootloader.bin
+          mv ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.ino.partitions.bin ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/partitions.bin
 
-      - name: Upload ${{ matrix.board.name }} Artifact
+      - name: Upload ${{ matrix.board.name }} Firmware Artifact
         uses: actions/upload-artifact@v4
         with:
           name: src.${{ matrix.board.file_name }}.bin
           path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/src.${{ matrix.board.file_name }}.bin
+          retention-days: 5
+          
+      - name: Upload ${{ matrix.board.name }} Bootloader Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootloader.bin
+          path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/bootloader.bin
+          retention-days: 5
+          
+      - name: Upload ${{ matrix.board.name }} Partitions Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: partitions.bin
+          path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/partitions.bin
           retention-days: 5
 
   post_compile_steps:
@@ -198,3 +214,5 @@ jobs:
           draft: true
           files: |
             src.*.bin
+            bootloader.bin
+            partitions.bin
