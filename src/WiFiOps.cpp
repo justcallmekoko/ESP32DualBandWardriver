@@ -33,6 +33,12 @@ static const uint8_t scan_channels[] = {
 
 #define NUM_SCAN_CHANNELS (sizeof(scan_channels) / sizeof(scan_channels[0]))
 
+uint8_t assigned_start_idx = 0;
+uint8_t assigned_end_idx = NUM_SCAN_CHANNELS - 1;
+uint8_t assigned_node_index = 0;
+uint8_t assigned_node_count = 1;
+uint8_t assignment_version = 0;
+
 uint8_t pmk[16];
 uint8_t lmk[16];
 
@@ -143,6 +149,7 @@ int WiFiOps::allocateNodeSlot(const uint8_t* mac) {
       node_table[i].assigned_index = 0;
       node_table[i].start_channel_idx = 0;
       node_table[i].end_channel_idx = NUM_SCAN_CHANNELS - 1;
+      node_table[i].last_admin_version_sent = 0; // force update
       node_table[i].flags = NODE_FLAG_ACTIVE | NODE_FLAG_ADMIN_DIRTY;
       return i;
     }
@@ -151,7 +158,8 @@ int WiFiOps::allocateNodeSlot(const uint8_t* mac) {
   return -1;
 }
 
-int WiFiOps::touchNode(const uint8_t* mac) {
+int WiFiOps::touchNode(const uint8_t* mac, bool& isNewNode) {
+  isNewNode = false;
   uint16_t suffix = macToSuffix(mac);
 
   int slot = findNodeByMacSuffix(suffix);
@@ -163,6 +171,7 @@ int WiFiOps::touchNode(const uint8_t* mac) {
   slot = allocateNodeSlot(mac);
   if (slot >= 0) {
     node_table[slot].last_seen_ms = millis();
+    isNewNode = true;
     char mac_str[] = "00:00";
     this->macSuffixToStr(suffix, mac_str);
     Serial.print("Node added: ");
@@ -225,18 +234,63 @@ uint8_t WiFiOps::getNodeEndChannel(uint8_t slot) {
 
 uint8_t WiFiOps::getActiveNodeCount() {
   uint8_t count = 0;
-  uint32_t now = millis();
 
   for (uint8_t i = 0; i < MAX_NODES; i++) {
     if (node_table[i].flags & NODE_FLAG_ACTIVE) {
-
-      if ((uint32_t)(now - node_table[i].last_seen_ms) <= NODE_TIMEOUT_MS) {
-        count++;
-      }
+      count++;
     }
   }
 
   return count;
+}
+
+void WiFiOps::markAllActiveNodesAdminDirty() {
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+      node_table[i].flags |= NODE_FLAG_ADMIN_DIRTY;
+    }
+  }
+}
+
+void WiFiOps::handleNodeTopologyChange() {
+  this->current_assignment_version++;
+  if (this->current_assignment_version == 0) 
+    this->current_assignment_version = 1;
+
+  this->recalculateChannelAssignments();
+  this->markAllActiveNodesAdminDirty();
+  //this->debugPrintNodeTable();
+}
+
+void WiFiOps::debugPrintNodeTable() {
+  Serial.println("\n===== NODE TABLE =====");
+  Serial.println("Current Assignment Version: " + (String)this->current_assignment_version);
+
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+
+    if (!(node_table[i].flags & NODE_FLAG_ACTIVE)) {
+      continue;
+    }
+
+    uint8_t start_ch = scan_channels[node_table[i].start_channel_idx];
+    uint8_t end_ch   = scan_channels[node_table[i].end_channel_idx];
+
+    uint32_t age = millis() - node_table[i].last_seen_ms;
+
+    Serial.printf(
+      "Slot %u | MAC:%04X | idx:%u | ch:%u-%u | ver:%u | flags:0x%02X | age:%lu ms\n",
+      i,
+      node_table[i].mac_suffix,
+      node_table[i].assigned_index,
+      start_ch,
+      end_ch,
+      node_table[i].last_admin_version_sent,
+      node_table[i].flags,
+      age
+    );
+  }
+
+  Serial.println("======================\n");
 }
 
 void WiFiOps::setFixedChannel(uint8_t ch) {
@@ -280,6 +334,48 @@ bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lm
   return (esp_now_add_peer(&peerInfo) == ESP_OK);
 }
 
+bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
+  extern WiFiOps wifi_ops;
+
+  if (!(node_table[slot].flags & NODE_FLAG_ACTIVE)) return false;
+
+  enow_admin_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_ADMIN;
+  msg.assignment_version = wifi_ops.current_assignment_version;
+  msg.node_index = node_table[slot].assigned_index;
+  msg.node_count = wifi_ops.getActiveNodeCount();
+  msg.start_channel_idx = node_table[slot].start_channel_idx;
+  msg.end_channel_idx = node_table[slot].end_channel_idx;
+
+  // Temporary plaintext peer
+  if (!esp_now_is_peer_exist(dest_mac)) {
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, dest_mac, 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+      return false;
+    }
+  }
+
+  esp_err_t res = esp_now_send(dest_mac, (uint8_t*)&msg, sizeof(msg));
+  if (res != ESP_OK) {
+    char macStr[18];
+    utils.macToStr(dest_mac, macStr);
+    Serial.printf("ESPNOW send failed to %s err=%d\n", macStr, res);
+    esp_now_del_peer(dest_mac);
+    return false;
+  }
+
+  esp_now_del_peer(dest_mac);
+
+  node_table[slot].last_admin_version_sent = wifi_ops.current_assignment_version;
+  node_table[slot].flags &= ~NODE_FLAG_ADMIN_DIRTY;
+  return true;
+}
+
 void WiFiOps::sendCoreRequest() {
   enow_text_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
@@ -315,19 +411,42 @@ void WiFiOps::sendCoreReply(const uint8_t* destMac) {
                 macStr, (res == ESP_OK) ? "OK" : "FAIL");
 }
 
+void WiFiOps::runAdminWindowAfterScanCycle() {
+  this->setFixedChannel(ESPNOW_CHANNEL);
+  delay(5);
+  this->sendHeartbeat();
+
+  // Wait for ADMIN response
+  unsigned long start = millis();
+  while ((millis() - start) < ADMIN_WAIT_MS) {
+    delay(5);
+  }
+}
+
 void WiFiOps::sendHeartbeat() {
-  if (!g_secure_ready) return;
+  extern WiFiOps wifi_ops;
+
+  if (wifi_ops.use_encryption) {
+    if (!g_secure_ready) return;
+  }
 
   enow_text_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
   msg.type = MSG_HEARTBEAT;
   msg.counter = g_hb_counter++;
 
-  esp_err_t res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+  esp_err_t res;
+  if (wifi_ops.use_encryption) {
+    res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+  } else {
+    res = esp_now_send(BROADCAST_MAC, (uint8_t*)&msg, sizeof(msg));
+  }
+
   if (res != ESP_OK) {
-    Logger::log(WARN_MSG, "NODE: Encrypted heartbeat send FAIL");
-  } else
-   Logger::log(WARN_MSG, "NODE: Sent Encrypted heartbeat: " + (String)millis());
+    Logger::log(WARN_MSG, "NODE: Heartbeat send FAIL");
+  } else {
+    Logger::log(GUD_MSG, "NODE: Sent heartbeat");
+  }
 }
 
 bool WiFiOps::sendEncryptedStringToCore(const String& s) {
@@ -434,93 +553,177 @@ bool WiFiOps::parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out)
 void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   extern WiFiOps wifi_ops;
 
-  if (!info || !data || len < (int)sizeof(enow_text_msg_t)) return;
+  bool isNewNode = false;
+  int slot = -1;
 
-  enow_text_msg_t msg;
-  memcpy(&msg, data, sizeof(msg));
+  // Need at least magic[4] + type[1]
+  if (!info || !data || len < 5) return;
 
-  if (memcmp(msg.magic, MAGIC, 4) != 0) return;
+  // Validate protocol magic
+  if (memcmp(data, MAGIC, 4) != 0) return;
 
+  const uint8_t msgType = data[4];
   const int rssi = (info->rx_ctrl) ? info->rx_ctrl->rssi : 0;
 
   char srcMacStr[18];
   utils.macToStr(info->src_addr, srcMacStr);
 
   if (wifi_ops.run_mode == CORE_MODE) {
-    if (msg.type == MSG_CORE_REQUEST) { // Receive Probe
+
+    if (msgType == MSG_CORE_REQUEST) {
+      if (len < (int)sizeof(enow_text_msg_t)) return;
+
+      const enow_text_msg_t* msg = (const enow_text_msg_t*)data;
+
       Serial.printf("CORE: RX CORE_REQUEST from %s | RSSI %d dBm\n", srcMacStr, rssi);
 
+      // Track node regardless of encryption success
+      slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+
+      // Plaintext reply so node can learn CORE MAC
       wifi_ops.sendCoreReply(info->src_addr);
 
-      if (!wifi_ops.addPeerWithMode(info->src_addr, true, lmk)) {
-        Logger::log(WARN_MSG, "CORE: Failed to add ENCRYPTED peer for NODE");
-      } else {
-        Serial.printf("CORE: Encrypted peer ready for %s\n", srcMacStr);
-        wifi_ops.touchNode(info->src_addr);
+      // Only set up encrypted peer if encryption is enabled
+      if (wifi_ops.use_encryption) {
+        if (!wifi_ops.addPeerWithMode(info->src_addr, true, lmk)) {
+          Logger::log(WARN_MSG, "CORE: Failed to add ENCRYPTED peer for NODE");
+        } else {
+          Serial.printf("CORE: Encrypted peer ready for %s\n", srcMacStr);
+          if (slot >= 0) {
+            node_table[slot].flags |= NODE_FLAG_ENCRYPTED;
+          }
+        }
       }
+
+      if (slot >= 0 && isNewNode) {
+        wifi_ops.handleNodeTopologyChange();
+      }
+
+      // Initial pairing is a valid rendezvous point for admin
+      if (slot >= 0 && (node_table[slot].flags & NODE_FLAG_ADMIN_DIRTY)) {
+        if (wifi_ops.sendAdminToNodeSlot(slot, info->src_addr)) {
+          Logger::log(GUD_MSG, "Successfully sent Admin message to Node");
+          wifi_ops.debugPrintNodeTable();
+        }
+      }
+
+      (void)msg;
       return;
     }
-    else if (msg.type == MSG_HEARTBEAT) { // Receive Heartbeat
+
+    if (msgType == MSG_HEARTBEAT) {
+      if (len < (int)sizeof(enow_text_msg_t)) return;
+
+      const enow_text_msg_t* msg = (const enow_text_msg_t*)data;
+
       Serial.printf("CORE: RX HEARTBEAT from %s | RSSI %d dBm | #%lu\n",
-                    srcMacStr, rssi, (unsigned long)msg.counter);
-      wifi_ops.touchNode(info->src_addr);
+                    srcMacStr, rssi, (unsigned long)msg->counter);
+
+      slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+
+      if (slot >= 0 && isNewNode) {
+        wifi_ops.handleNodeTopologyChange();
+      }
+
+      // Heartbeat is the preferred rendezvous moment for admin
+      if (slot >= 0 && (node_table[slot].flags & NODE_FLAG_ADMIN_DIRTY)) {
+        if (wifi_ops.sendAdminToNodeSlot(slot, info->src_addr)) {
+          Logger::log(GUD_MSG, "Successfully sent Admin message to Node");
+          wifi_ops.debugPrintNodeTable();
+        }
+      }
+
       return;
     }
-    else if (msg.type == MSG_TEXT) { // Receive Data
+
+    if (msgType == MSG_TEXT) {
+      if (len < (int)sizeof(enow_text_msg_t)) return;
+
       const enow_text_msg_t* t = (const enow_text_msg_t*)data;
+
+      // Track sender as soon as a valid text packet arrives
+      /*slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+
+      if (slot >= 0 && isNewNode) {
+        wifi_ops.handleNodeTopologyChange();
+      }
+
+      if (slot >= 0 && (node_table[slot].flags & NODE_FLAG_ADMIN_DIRTY)) {
+        wifi_ops.sendAdminToNodeSlot(slot, info->src_addr);
+      }*/
+
       if (t->len <= ENOW_TEXT_MAX) {
         Serial.printf("CORE: RX WARDRV TEXT from %s: %s\n", srcMacStr, t->text);
+
         WardriveRecord rec;
         if (wifi_ops.parseWardriveLine(*t, rec)) {
-
-          // Check for new entry
           uint8_t bssid[6] = {0};
           utils.convertMacStringToUint8(rec.bssid, bssid);
-          if (wifi_ops.seen_mac(bssid))
-            return;
 
-          // Save new entry
-          wifi_ops.save_mac(bssid);
+          if (!wifi_ops.seen_mac(bssid)) {
+            wifi_ops.save_mac(bssid);
 
-          // Save line to file
-          String type = "WIFI";
-          if (rec.type == "B")
-            type = "BLE";
-          String wardrive_line = rec.bssid + "," + rec.essid + "," + rec.security + "," + gps.getDatetime() + "," + (String)rec.channel + "," + (String)rec.rssi + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + "," + type;
-          Logger::log(GUD_MSG, wardrive_line);
-          if (gps.getFixStatus()) {
-            // Update stats
-            if (type == "WIFI") {
-              wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
-              wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
+            String type = "WIFI";
+            if (rec.type == "B")
+              type = "BLE";
 
-              if (rec.channel > 14) {
-                wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
-              } else {
-                wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
+            String wardrive_line =
+              rec.bssid + "," +
+              rec.essid + "," +
+              rec.security + "," +
+              gps.getDatetime() + "," +
+              (String)rec.channel + "," +
+              (String)rec.rssi + "," +
+              gps.getLat() + "," +
+              gps.getLon() + "," +
+              gps.getAlt() + "," +
+              gps.getAccuracy() + "," +
+              type;
+
+            Logger::log(GUD_MSG, wardrive_line);
+
+            if (gps.getFixStatus()) {
+              if (type == "WIFI") {
+                wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
+                wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
+
+                if (rec.channel > 14) {
+                  wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
+                } else {
+                  wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
+                }
+              } else if (type == "BLE") {
+                wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
+                wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
               }
-            }
-            else if (type == "BLE") {
-              wifi_ops.setCurrentBLECount(wifi_ops.getCurrentBLECount() + 1);
 
-              wifi_ops.setTotalBLECount(wifi_ops.getTotalBLECount() + 1);
+              buffer.append(wardrive_line + "\n");
             }
-            buffer.append(wardrive_line + "\n");
           }
-          wifi_ops.touchNode(info->src_addr);
         }
       } else {
         Logger::log(WARN_MSG, "CORE: RX WARDRV TEXT: text len: " + (String)t->len + " > ENOW_TEXT_MAX");
       }
+
+      //if (slot >= 0 && isNewNode) {
+      //  wifi_ops.handleNodeTopologyChange();
+      //}
+
+      // Do NOT send admin here; wait for heartbeat/check-in window
       return;
     }
-    else {
-      const enow_text_msg_t* t = (const enow_text_msg_t*)data;
-      Serial.printf("CORE: RX TEXT from %s: %s\n", srcMacStr, t->text);
-    }
+
+    // Unknown / unhandled type on CORE
+    Serial.printf("CORE: RX unknown type %u from %s | RSSI %d dBm\n",
+                  msgType, srcMacStr, rssi);
+    return;
   }
-  else if (wifi_ops.run_mode == NODE_MODE) {
-    if (msg.type == MSG_CORE_REPLY) { // Receive Probe Reply
+
+  if (wifi_ops.run_mode == NODE_MODE) {
+
+    if (msgType == MSG_CORE_REPLY) {
+      if (len < (int)sizeof(enow_text_msg_t)) return;
+
       memcpy(g_core_mac, info->src_addr, 6);
       g_have_core = true;
 
@@ -528,16 +731,48 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
       utils.macToStr(g_core_mac, coreStr);
       Serial.printf("NODE: Learned CORE MAC (plaintext reply): %s | RSSI %d dBm\n", coreStr, rssi);
 
-      // Add encrypted peer for core now
-      if (!wifi_ops.addPeerWithMode(g_core_mac, true, lmk)) {
-        Logger::log(WARN_MSG, "NODE: Failed to add ENCRYPTED peer for CORE");
-        g_secure_ready = false;
+      if (wifi_ops.use_encryption) {
+        if (!wifi_ops.addPeerWithMode(g_core_mac, true, lmk)) {
+          Logger::log(WARN_MSG, "NODE: Failed to add ENCRYPTED peer for CORE");
+          g_secure_ready = false;
+        } else {
+          g_secure_ready = true;
+          Logger::log(GUD_MSG, "NODE: Encrypted peer ready; switching to encrypted heartbeats...");
+        }
       } else {
         g_secure_ready = true;
-        Logger::log(WARN_MSG, "NODE: Encrypted peer ready; switching to encrypted heartbeats...");
       }
+
       return;
     }
+
+    if (msgType == MSG_ADMIN) {
+      if (len < (int)sizeof(enow_admin_msg_t)) return;
+
+      const enow_admin_msg_t* admin = (const enow_admin_msg_t*)data;
+
+      if (admin->assignment_version != assignment_version) {
+        assignment_version = admin->assignment_version;
+        assigned_node_index = admin->node_index;
+        assigned_node_count = admin->node_count;
+        assigned_start_idx = admin->start_channel_idx;
+        assigned_end_idx = admin->end_channel_idx;
+
+        Serial.printf("NODE: New admin assignment v%u | node %u/%u | idx %u-%u\n",
+                      assignment_version,
+                      assigned_node_index,
+                      assigned_node_count,
+                      assigned_start_idx,
+                      assigned_end_idx);
+      }
+
+      return;
+    }
+
+    // Unknown / unhandled type on NODE
+    Serial.printf("NODE: RX unknown type %u from %s | RSSI %d dBm\n",
+                  msgType, srcMacStr, rssi);
+    return;
   }
 }
 
@@ -709,6 +944,9 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
 
         while(pBLEScan->isScanning())
           delay(1);
+
+        if (this->run_mode == NODE_MODE)
+          this->runAdminWindowAfterScanCycle();
 
         // Start a new scan on all channels
         WiFi.scanNetworks(true, true, false, 80);
@@ -1601,8 +1839,11 @@ bool WiFiOps::begin(bool skip_admin) {
     startLog(LOG_FILE_NAME);
 
   // Random delay for nodes to stagger channels
-  if (this->run_mode == NODE_MODE)
+  if (this->run_mode == NODE_MODE) {
+    delay(1000);
+    this->runAdminWindowAfterScanCycle();
     delay(random(100, 5000));
+  }
 
   this->init_time = millis();
 
@@ -1624,4 +1865,10 @@ void WiFiOps::main(uint32_t currentTime) {
     }
     return;
   }
+
+  /*if (this->run_mode == CORE_MODE) {
+    if (wifi_ops.removeStaleNodes()) {
+      wifi_ops.handleNodeTopologyChange();
+    }
+  }*/
 }
