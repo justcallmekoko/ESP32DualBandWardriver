@@ -20,14 +20,30 @@ static unsigned long g_last_hb_ms = 0;
 static unsigned long g_last_req_ms = 0;
 static uint32_t g_req_interval_ms = REQ_INITIAL_MS;
 
+static const uint8_t scan_channels[] = {
+  // 2.4 GHz
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+
+  // 5 GHz
+  36, 40, 44, 48,
+  52, 56, 60, 64,
+  100, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+  149, 153, 157, 161, 165, 169, 173, 177
+};
+
+#define NUM_SCAN_CHANNELS (sizeof(scan_channels) / sizeof(scan_channels[0]))
+
 uint8_t pmk[16];
 uint8_t lmk[16];
+
+NodeRecord node_table[MAX_NODES];
 
 enum MsgType : uint8_t {
   MSG_CORE_REQUEST   = 1,
   MSG_CORE_REPLY     = 2,
   MSG_HEARTBEAT      = 3,
-  MSG_TEXT           = 4
+  MSG_TEXT           = 4,
+  MSG_ADMIN          = 5
 };
 
 WebServer server(80);
@@ -94,6 +110,130 @@ class scanCallbacks : public NimBLEScanCallbacks {
     }
   }
 };
+
+uint16_t WiFiOps::macToSuffix(const uint8_t* mac) {
+  return ((uint16_t)mac[4] << 8) | mac[5];
+}
+
+void WiFiOps::macSuffixToStr(uint16_t suffix, char* out6) {
+  sprintf(out6, "%02X:%02X", (suffix >> 8) & 0xFF, suffix & 0xFF);
+}
+
+int WiFiOps::findNodeByMacSuffix(uint16_t suffix) {
+  for (int i = 0; i < MAX_NODES; i++) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        node_table[i].mac_suffix == suffix) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int WiFiOps::findNodeByMac(const uint8_t* mac) {
+  return this->findNodeByMacSuffix(this->macToSuffix(mac));
+}
+
+int WiFiOps::allocateNodeSlot(const uint8_t* mac) {
+  uint16_t suffix = macToSuffix(mac);
+
+  for (int i = 0; i < MAX_NODES; i++) {
+    if (!(node_table[i].flags & NODE_FLAG_ACTIVE)) {
+      node_table[i].mac_suffix = suffix;
+      node_table[i].last_seen_ms = millis();
+      node_table[i].assigned_index = 0;
+      node_table[i].start_channel_idx = 0;
+      node_table[i].end_channel_idx = NUM_SCAN_CHANNELS - 1;
+      node_table[i].flags = NODE_FLAG_ACTIVE | NODE_FLAG_ADMIN_DIRTY;
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+int WiFiOps::touchNode(const uint8_t* mac) {
+  uint16_t suffix = macToSuffix(mac);
+
+  int slot = findNodeByMacSuffix(suffix);
+  if (slot >= 0) {
+    node_table[slot].last_seen_ms = millis();
+    return slot;
+  }
+
+  slot = allocateNodeSlot(mac);
+  if (slot >= 0) {
+    node_table[slot].last_seen_ms = millis();
+    Logger::log(GUD_MSG, "Node added. Node count updated: " + (String)this->getActiveNodeCount());
+  }
+  return slot;
+}
+
+bool WiFiOps::removeStaleNodes() {
+  bool changed = false;
+  uint32_t now = millis();
+
+  for (int i = 0; i < MAX_NODES; i++) {
+    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+      if ((uint32_t)(now - node_table[i].last_seen_ms) > NODE_TIMEOUT_MS) {
+        memset(&node_table[i], 0, sizeof(NodeRecord));
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+void WiFiOps::recalculateChannelAssignments() {
+  uint8_t active_slots[MAX_NODES];
+  uint8_t active_count = 0;
+
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+      active_slots[active_count++] = i;
+    }
+  }
+
+  if (active_count == 0) {
+    return;
+  }
+
+  for (uint8_t node_num = 0; node_num < active_count; node_num++) {
+    uint8_t slot = active_slots[node_num];
+
+    uint8_t start_idx = (node_num * NUM_SCAN_CHANNELS) / active_count;
+    uint8_t end_idx   = (((node_num + 1) * NUM_SCAN_CHANNELS) / active_count) - 1;
+
+    node_table[slot].assigned_index = node_num;
+    node_table[slot].start_channel_idx = start_idx;
+    node_table[slot].end_channel_idx = end_idx;
+    node_table[slot].flags |= NODE_FLAG_ADMIN_DIRTY;
+  }
+}
+
+uint8_t WiFiOps::getNodeStartChannel(uint8_t slot) {
+  return scan_channels[node_table[slot].start_channel_idx];
+}
+
+uint8_t WiFiOps::getNodeEndChannel(uint8_t slot) {
+  return scan_channels[node_table[slot].end_channel_idx];
+}
+
+uint8_t WiFiOps::getActiveNodeCount() {
+  uint8_t count = 0;
+  uint32_t now = millis();
+
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+
+      if ((uint32_t)(now - node_table[i].last_seen_ms) <= NODE_TIMEOUT_MS) {
+        count++;
+      }
+    }
+  }
+
+  return count;
+}
 
 void WiFiOps::setFixedChannel(uint8_t ch) {
   // Disable power save (prevents weird timing/channel behavior)

@@ -36,6 +36,13 @@ extern WebServer server;
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
 
+#define MAX_NODES 24
+#define NODE_TIMEOUT_MS 30000
+
+#define NODE_FLAG_ACTIVE       0x01
+#define NODE_FLAG_ENCRYPTED    0x02
+#define NODE_FLAG_ADMIN_DIRTY  0x04
+
 typedef struct __attribute__((packed)) {
   char     magic[4];               // "ENOW"
   uint8_t  type;                   // MSG_TEXT
@@ -44,6 +51,15 @@ typedef struct __attribute__((packed)) {
   char     text[ENOW_TEXT_MAX + 1];  // +1 for NUL terminator
 } enow_text_msg_t;
 
+typedef struct __attribute__((packed)) {
+  char    magic[4];
+  uint8_t type;            // MSG_ADMIN
+  uint8_t node_index;      // this node's order among active nodes
+  uint8_t node_count;      // active node count
+  uint8_t start_channel;   // actual channel number
+  uint8_t end_channel;     // actual channel number
+} enow_admin_msg_t;
+
 struct WardriveRecord {
   String bssid;
   String essid;
@@ -51,6 +67,15 @@ struct WardriveRecord {
   int    channel;
   int    rssi;
   String type;
+};
+
+struct NodeRecord {
+  uint16_t mac_suffix;       // last 2 bytes of MAC, big-endian
+  uint32_t last_seen_ms;
+  uint8_t assigned_index;    // slot order among active nodes
+  uint8_t start_channel_idx; // index into scan_channels[]
+  uint8_t end_channel_idx;   // index into scan_channels[]
+  uint8_t flags;
 };
 
 class WiFiOps
@@ -90,6 +115,16 @@ class WiFiOps
     uint32_t total_net_count = 0;
     uint32_t total_ble_count = 0;
 
+    int findNodeByMacSuffix(uint16_t suffix);
+    int findNodeByMac(const uint8_t* mac);
+    int allocateNodeSlot(const uint8_t* mac);
+    bool removeStaleNodes();
+    void recalculateChannelAssignments();
+    void markAdminDirtyForAllNodes();
+    int touchNode(const uint8_t* mac);
+    uint8_t getNodeStartChannel(uint8_t slot);
+    uint8_t getNodeEndChannel(uint8_t slot);
+    uint8_t getActiveNodeCount();
     void showCountdown();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
@@ -116,6 +151,8 @@ class WiFiOps
     bool use_encryption = false;
 
     String esp_now_key = "";
+
+    uint8_t active_node_count = 0;
 
     bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
@@ -162,6 +199,8 @@ class WiFiOps
     static void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
     static void derive_key_16(const String& s, uint8_t out16[16]);
     static void computeKeysFromEnowKey();
+    static uint16_t macToSuffix(const uint8_t* mac);
+    static void macSuffixToStr(uint16_t suffix, char* out6);
 
 };
 
