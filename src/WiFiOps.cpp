@@ -163,7 +163,11 @@ int WiFiOps::touchNode(const uint8_t* mac) {
   slot = allocateNodeSlot(mac);
   if (slot >= 0) {
     node_table[slot].last_seen_ms = millis();
-    Logger::log(GUD_MSG, "Node added. Node count updated: " + (String)this->getActiveNodeCount());
+    char mac_str[] = "00:00";
+    this->macSuffixToStr(suffix, mac_str);
+    Serial.print("Node added: ");
+    Serial.print(mac_str);
+    Serial.println(" | Node count updated: " + (String)this->getActiveNodeCount());
   }
   return slot;
 }
@@ -452,12 +456,14 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
         Logger::log(WARN_MSG, "CORE: Failed to add ENCRYPTED peer for NODE");
       } else {
         Serial.printf("CORE: Encrypted peer ready for %s\n", srcMacStr);
+        wifi_ops.touchNode(info->src_addr);
       }
       return;
     }
     else if (msg.type == MSG_HEARTBEAT) { // Receive Heartbeat
       Serial.printf("CORE: RX HEARTBEAT from %s | RSSI %d dBm | #%lu\n",
                     srcMacStr, rssi, (unsigned long)msg.counter);
+      wifi_ops.touchNode(info->src_addr);
       return;
     }
     else if (msg.type == MSG_TEXT) { // Receive Data
@@ -501,6 +507,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
             }
             buffer.append(wardrive_line + "\n");
           }
+          wifi_ops.touchNode(info->src_addr);
         }
       } else {
         Logger::log(WARN_MSG, "CORE: RX WARDRV TEXT: text len: " + (String)t->len + " > ENOW_TEXT_MAX");
