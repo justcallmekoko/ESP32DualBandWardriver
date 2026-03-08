@@ -18,6 +18,7 @@ static unsigned long g_last_hb_ms = 0;
 
 // Retry state
 static unsigned long g_last_req_ms = 0;
+static unsigned long g_last_debug_print = 0;
 static uint32_t g_req_interval_ms = REQ_INITIAL_MS;
 
 static const uint8_t scan_channels[] = {
@@ -1866,9 +1867,14 @@ void WiFiOps::main(uint32_t currentTime) {
     return;
   }
 
-  /*if (this->run_mode == CORE_MODE) {
-    if (wifi_ops.removeStaleNodes()) {
-      wifi_ops.handleNodeTopologyChange();
+  if (this->run_mode == CORE_MODE) {
+    if (currentTime - g_last_debug_print >= DEBUG_OUTPUT_DELAY) {
+      g_last_debug_print = currentTime;
+      Logger::log(STD_MSG, "Timed Node Table Output: ");
+      this->debugPrintNodeTable();
     }
-  }*/
+    if (this->removeStaleNodes()) {
+      this->handleNodeTopologyChange();
+    }
+  }
 }
