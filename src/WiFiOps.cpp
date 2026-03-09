@@ -424,6 +424,28 @@ void WiFiOps::runAdminWindowAfterScanCycle() {
   }
 }
 
+void WiFiOps::startNextNodeAssignedScan() {
+  if (assigned_start_idx >= NUM_SCAN_CHANNELS ||
+      assigned_end_idx >= NUM_SCAN_CHANNELS ||
+      assigned_start_idx > assigned_end_idx) {
+    WiFi.scanNetworks(true, true, false, 80);
+    return;
+  }
+
+  if (current_assigned_scan_idx < assigned_start_idx ||
+      current_assigned_scan_idx > assigned_end_idx) {
+    current_assigned_scan_idx = assigned_start_idx;
+  }
+
+  uint8_t channel = scan_channels[current_assigned_scan_idx];
+  WiFi.scanNetworks(true, true, false, 80, channel);
+
+  current_assigned_scan_idx++;
+  if (current_assigned_scan_idx > assigned_end_idx) {
+    current_assigned_scan_idx = assigned_start_idx;
+  }
+}
+
 void WiFiOps::sendHeartbeat() {
   extern WiFiOps wifi_ops;
 
@@ -922,7 +944,10 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
       if (scan_status == WIFI_SCAN_RUNNING) // Scan is still running
         delay(1);
       else if (scan_status == WIFI_SCAN_FAILED) { // Scan is failed or not started
-        WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
+        if (this->run_mode == NODE_MODE)
+          this->startNextNodeAssignedScan();
+        else
+          WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
         delay(100);
         if (WiFi.scanComplete() == WIFI_SCAN_FAILED)
           Logger::log(WARN_MSG, "WiFi scan failed to start!");
@@ -941,16 +966,20 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         WiFi.scanDelete();
 
         // Scan BLE here
-        this->scanBLE();
+        if (current_assigned_scan_idx == assigned_start_idx)
+          this->scanBLE();
 
         while(pBLEScan->isScanning())
           delay(1);
 
-        if (this->run_mode == NODE_MODE)
+        if ((this->run_mode == NODE_MODE) && (current_assigned_scan_idx == assigned_start_idx))
           this->runAdminWindowAfterScanCycle();
 
         // Start a new scan on all channels
-        WiFi.scanNetworks(true, true, false, 80);
+        if (this->run_mode == NODE_MODE)
+          this->startNextNodeAssignedScan();
+        else
+          WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
       }
     }
   }

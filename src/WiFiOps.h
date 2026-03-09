@@ -119,6 +119,7 @@ class WiFiOps
     uint32_t total_net_count = 0;
     uint32_t total_ble_count = 0;
 
+    void startNextNodeAssignedScan();
     void runAdminWindowAfterScanCycle();
     void debugPrintNodeTable();
     void handleNodeTopologyChange();
@@ -158,6 +159,7 @@ class WiFiOps
     bool use_encryption = false;
 
     uint8_t current_assignment_version = 1;
+    uint8_t current_assigned_scan_idx = 0;
 
     String esp_now_key = "";
 
