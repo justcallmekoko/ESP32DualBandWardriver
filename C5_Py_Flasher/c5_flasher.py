@@ -185,21 +185,24 @@ def main():
         print("Aborting.")
         exit(0)
         
-    # --- erase flash before flashing ---
-    print(Fore.YELLOW + "Erasing ESP32-C5 flash (this may take a bit)..." + Style.RESET_ALL)
+    confirm = input(Fore.YELLOW + "Erase flash contents before install? (y/N): " + Style.RESET_ALL)
+    if confirm.strip().lower() == 'y':
+        
+        # --- erase flash before flashing ---
+        print(Fore.YELLOW + "Erasing ESP32-C5 flash (this may take a bit)..." + Style.RESET_ALL)
 
-    erase_args = [
-        '--chip', 'esp32c5',
-        '--port', serial_port,
-        '--baud', '921600',
-        '--before', 'default_reset',
-        '--after', 'hard_reset',
-        'erase_flash'
-    ]
+        erase_args = [
+            '--chip', 'esp32c5',
+            '--port', serial_port,
+            '--baud', '921600',
+            '--before', 'default_reset',
+            '--after', 'hard_reset',
+            'erase_flash'
+        ]
 
-    if not run_esptool(erase_args, success_msg=Fore.GREEN + "Erase complete!" + Style.RESET_ALL,
-                      fail_prefix="Erase failed"):
-        exit(1)
+        if not run_esptool(erase_args, success_msg=Fore.GREEN + "Erase complete!" + Style.RESET_ALL,
+                          fail_prefix="Erase failed"):
+            exit(1)
 
     # --- now do write_flash ---
     print(Fore.YELLOW + "Flashing ESP32-C5 with bootloader, partition table, and application..." + Style.RESET_ALL)
