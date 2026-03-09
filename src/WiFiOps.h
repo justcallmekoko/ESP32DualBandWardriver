@@ -36,6 +36,15 @@ extern WebServer server;
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
 
+#define MAX_NODES 24
+#define NODE_TIMEOUT_MS 30000
+#define ADMIN_WAIT_MS 300
+#define DEBUG_OUTPUT_DELAY 30000
+
+#define NODE_FLAG_ACTIVE       0x01
+#define NODE_FLAG_ENCRYPTED    0x02
+#define NODE_FLAG_ADMIN_DIRTY  0x04
+
 typedef struct __attribute__((packed)) {
   char     magic[4];               // "ENOW"
   uint8_t  type;                   // MSG_TEXT
@@ -44,6 +53,16 @@ typedef struct __attribute__((packed)) {
   char     text[ENOW_TEXT_MAX + 1];  // +1 for NUL terminator
 } enow_text_msg_t;
 
+typedef struct __attribute__((packed)) {
+  char    magic[4];
+  uint8_t type;               // MSG_ADMIN
+  uint8_t assignment_version;
+  uint8_t node_index;
+  uint8_t node_count;
+  uint8_t start_channel_idx;
+  uint8_t end_channel_idx;
+} enow_admin_msg_t;
+
 struct WardriveRecord {
   String bssid;
   String essid;
@@ -51,6 +70,16 @@ struct WardriveRecord {
   int    channel;
   int    rssi;
   String type;
+};
+
+struct NodeRecord {
+  uint16_t mac_suffix;
+  uint32_t last_seen_ms;
+  uint8_t assigned_index;
+  uint8_t start_channel_idx;
+  uint8_t end_channel_idx;
+  uint8_t last_admin_version_sent;
+  uint8_t flags;
 };
 
 class WiFiOps
@@ -90,6 +119,20 @@ class WiFiOps
     uint32_t total_net_count = 0;
     uint32_t total_ble_count = 0;
 
+    void startNextNodeAssignedScan();
+    void runAdminWindowAfterScanCycle();
+    void debugPrintNodeTable();
+    void handleNodeTopologyChange();
+    void markAllActiveNodesAdminDirty();
+    int findNodeByMacSuffix(uint16_t suffix);
+    int findNodeByMac(const uint8_t* mac);
+    int allocateNodeSlot(const uint8_t* mac);
+    bool removeStaleNodes();
+    void recalculateChannelAssignments();
+    int touchNode(const uint8_t* mac, bool& isNewNode);
+    uint8_t getNodeStartChannel(uint8_t slot);
+    uint8_t getNodeEndChannel(uint8_t slot);
+    uint8_t getActiveNodeCount();
     void showCountdown();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
@@ -114,6 +157,9 @@ class WiFiOps
     uint32_t last_web_client_activity;
     uint32_t last_timer;
     bool use_encryption = false;
+
+    uint8_t current_assignment_version = 1;
+    uint8_t current_assigned_scan_idx = 0;
 
     String esp_now_key = "";
 
@@ -158,10 +204,13 @@ class WiFiOps
     static bool addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]);
     static void sendCoreRequest();
     static void sendCoreReply(const uint8_t* destMac);
+    static bool sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac);
     static void sendHeartbeat();
     static void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
     static void derive_key_16(const String& s, uint8_t out16[16]);
     static void computeKeysFromEnowKey();
+    static uint16_t macToSuffix(const uint8_t* mac);
+    static void macSuffixToStr(uint16_t suffix, char* out6);
 
 };
 
