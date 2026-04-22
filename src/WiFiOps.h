@@ -37,7 +37,7 @@ extern WebServer server;
 #define WIFI_UPDATE     2
 
 #define MAX_NODES 24
-#define NODE_TIMEOUT_MS 30000
+#define NODE_TIMEOUT_MS 60000
 #define ADMIN_WAIT_MS 300
 #define DEBUG_OUTPUT_DELAY 30000
 
@@ -195,6 +195,7 @@ class WiFiOps
     bool sendEncryptedStringToCore(const String& s);
     bool sendBroadcastStringPlain(const String& s);
     bool parseWardriveLine(const enow_text_msg_t& msg, WardriveRecord& out);
+    int getAuthType(const wifi_promiscuous_pkt_t *ppkt);
 
     void startAccessPoint();
     void serveConfigPage();

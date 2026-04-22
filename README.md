@@ -3,6 +3,7 @@ Based on the ESP32-C5-DevKitC-1 v1.2, the ESP32 Dual Band Wardriver offers wardr
 Logs are formatted for Wigle and saved to SD card.
 
 ## Table of Continents
+- [Leaderboards](#leaderboards)
 - [Connections](#connections)
     - [Display](#display)
     - [GPS](#gps)
@@ -13,6 +14,9 @@ Logs are formatted for Wigle and saved to SD card.
 - [Update Firmware](#update-firmware)
 - [Usage](#usage)
 - [Modes](#modes)
+
+## Leaderboards
+Join **#wardriving** on [Wigle](https://wigle.net/stats#groupstats) and **KokosStripClub (invite code: tSVeWpoHAkeT)** on [WDGWars](https://wdgwars.pl) to have a little competitive fun with the art of wardriving.
 
 ## Connections
 **IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you much remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly**

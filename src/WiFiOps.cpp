@@ -21,6 +21,26 @@ static unsigned long g_last_req_ms = 0;
 static unsigned long g_last_debug_print = 0;
 static uint32_t g_req_interval_ms = REQ_INITIAL_MS;
 
+static inline uint16_t rd_le16(const uint8_t *p) {
+  return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static inline uint32_t rd_be24(const uint8_t *p) {
+  return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2];
+}
+
+static inline bool oui_type_match(const uint8_t *p, uint8_t b0, uint8_t b1, uint8_t b2, uint8_t type) {
+  return p[0] == b0 && p[1] == b1 && p[2] == b2 && p[3] == type;
+}
+
+static inline bool rsn_suite_is(const uint8_t *suite, uint8_t type) {
+  return suite[0] == 0x00 && suite[1] == 0x0f && suite[2] == 0xac && suite[3] == type;
+}
+
+static inline bool ms_wpa_suite_is(const uint8_t *suite, uint8_t type) {
+  return suite[0] == 0x00 && suite[1] == 0x50 && suite[2] == 0xf2 && suite[3] == type;
+}
+
 static const uint8_t scan_channels[] = {
   // 2.4 GHz
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
@@ -117,6 +137,262 @@ class scanCallbacks : public NimBLEScanCallbacks {
     }
   }
 };
+
+int WiFiOps::getAuthType(const wifi_promiscuous_pkt_t *ppkt) {
+  if (!ppkt) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  const uint8_t *frame = ppkt->payload;
+  const uint16_t len = ppkt->rx_ctrl.sig_len;
+
+  if (!frame || len < 36) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  const uint8_t fc0 = frame[0];
+  const uint8_t type = (fc0 >> 2) & 0x03;
+  const uint8_t subtype = (fc0 >> 4) & 0x0F;
+
+  if (type != 0) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  if (!(subtype == 8 || subtype == 5)) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  const size_t hdr_len = 24;
+  const size_t fixed_len = 12;
+
+  if (len < hdr_len + fixed_len) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  const uint8_t *fixed = frame + hdr_len;
+  const uint16_t capability = rd_le16(fixed + 10);
+
+  const bool privacy = (capability & 0x0010) != 0;
+
+  const uint8_t *ies = frame + hdr_len + fixed_len;
+  size_t ies_len = len - hdr_len - fixed_len;
+
+  bool has_rsn = false;
+  bool has_wpa = false;
+  bool has_wapi = false;
+
+  bool rsn_has_psk = false;
+  bool rsn_has_8021x = false;
+  bool rsn_has_sae = false;
+  bool rsn_has_owe = false;
+
+  bool wpa_has_psk = false;
+  bool wpa_has_8021x = false;
+
+  while (ies_len >= 2) {
+    const uint8_t id = ies[0];
+    const uint8_t elen = ies[1];
+
+    if (ies_len < (size_t)(2 + elen)) {
+      break;
+    }
+
+    const uint8_t *data = ies + 2;
+
+    if (id == 48 && elen >= 8) {
+      has_rsn = true;
+
+      const uint8_t *p = data;
+      size_t rem = elen;
+
+      if (rem < 2) {
+        goto next_ie;
+      }
+      p += 2;
+      rem -= 2;
+
+      if (rem < 4) {
+        goto next_ie;
+      }
+      p += 4;
+      rem -= 4;
+
+      if (rem < 2) {
+        goto next_ie;
+      }
+      uint16_t pairwise_count = rd_le16(p);
+      p += 2;
+      rem -= 2;
+
+      if (rem < (size_t)pairwise_count * 4) {
+        goto next_ie;
+      }
+      p += pairwise_count * 4;
+      rem -= pairwise_count * 4;
+
+      if (rem < 2) {
+        goto next_ie;
+      }
+      uint16_t akm_count = rd_le16(p);
+      p += 2;
+      rem -= 2;
+
+      if (rem < (size_t)akm_count * 4) {
+        goto next_ie;
+      }
+
+      for (uint16_t i = 0; i < akm_count; ++i) {
+        const uint8_t *akm = p + (i * 4);
+
+        if (rsn_suite_is(akm, 1) || rsn_suite_is(akm, 5)) {
+          rsn_has_8021x = true;
+        } else if (rsn_suite_is(akm, 2) || rsn_suite_is(akm, 6)) {
+          rsn_has_psk = true;
+        } else if (rsn_suite_is(akm, 8) || rsn_suite_is(akm, 9)) {
+          rsn_has_sae = true;
+        } else if (rsn_suite_is(akm, 18)) {
+          rsn_has_owe = true;
+        }
+      }
+
+      goto next_ie;
+    }
+
+    if (id == 221 && elen >= 8) {
+      if (oui_type_match(data, 0x00, 0x50, 0xf2, 0x01)) {
+        has_wpa = true;
+
+        const uint8_t *p = data + 4;
+        size_t rem = elen - 4;
+
+        if (rem < 2) {
+          goto next_ie;
+        }
+        p += 2;
+        rem -= 2;
+
+        if (rem < 4) {
+          goto next_ie;
+        }
+        p += 4;
+        rem -= 4;
+
+        if (rem < 2) {
+          goto next_ie;
+        }
+        uint16_t ucount = rd_le16(p);
+        p += 2;
+        rem -= 2;
+
+        if (rem < (size_t)ucount * 4) {
+          goto next_ie;
+        }
+        p += ucount * 4;
+        rem -= ucount * 4;
+
+        if (rem < 2) {
+          goto next_ie;
+        }
+        uint16_t akm_count = rd_le16(p);
+        p += 2;
+        rem -= 2;
+
+        if (rem < (size_t)akm_count * 4) {
+          goto next_ie;
+        }
+
+        for (uint16_t i = 0; i < akm_count; ++i) {
+          const uint8_t *akm = p + (i * 4);
+
+          if (ms_wpa_suite_is(akm, 1)) {
+            wpa_has_8021x = true;
+          } else if (ms_wpa_suite_is(akm, 2)) {
+            wpa_has_psk = true;
+          }
+        }
+
+        goto next_ie;
+      }
+    }
+
+    if (id == 68) {
+      has_wapi = true;
+      goto next_ie;
+    }
+
+next_ie:
+    ies += (2 + elen);
+    ies_len -= (2 + elen);
+  }
+
+  // Classification
+
+  #ifdef WIFI_AUTH_WAPI_PSK
+  if (has_wapi) {
+    return WIFI_AUTH_WAPI_PSK;
+  }
+  #endif
+
+  #ifdef WIFI_AUTH_OWE
+  if (has_rsn && rsn_has_owe) {
+    return WIFI_AUTH_OWE;
+  }
+  #endif
+
+  #ifdef WIFI_AUTH_WPA3_PSK
+  if (has_rsn && rsn_has_sae && !rsn_has_psk) {
+    return WIFI_AUTH_WPA3_PSK;
+  }
+  #endif
+
+  #ifdef WIFI_AUTH_WPA2_WPA3_PSK
+  if (has_rsn && rsn_has_sae && rsn_has_psk) {
+    return WIFI_AUTH_WPA2_WPA3_PSK;
+  }
+  #endif
+
+  if (has_rsn && rsn_has_8021x) {
+    return WIFI_AUTH_WPA2_ENTERPRISE;
+  }
+
+  #ifdef WIFI_AUTH_ENTERPRISE
+  if (has_wpa && wpa_has_8021x && !has_rsn) {
+    return WIFI_AUTH_ENTERPRISE;
+  }
+  #else
+  if (has_wpa && wpa_has_8021x && !has_rsn) {
+    return WIFI_AUTH_WPA2_ENTERPRISE;
+  }
+  #endif
+
+  if ((has_wpa && wpa_has_psk) && (has_rsn && rsn_has_psk)) {
+    return WIFI_AUTH_WPA_WPA2_PSK;
+  }
+
+  if (has_rsn && rsn_has_psk) {
+    return WIFI_AUTH_WPA2_PSK;
+  }
+
+  if (has_wpa && wpa_has_psk) {
+    return WIFI_AUTH_WPA_PSK;
+  }
+
+  // WEP heuristic:
+  // privacy bit set, but no WPA/RSN/WAPI IEs
+  if (privacy && !has_rsn && !has_wpa && !has_wapi) {
+    return WIFI_AUTH_WEP;
+  }
+
+  if (!privacy && !has_rsn && !has_wpa && !has_wapi) {
+    return WIFI_AUTH_OPEN;
+  }
+
+  if (privacy) {
+    return WIFI_AUTH_WEP;
+  }
+
+  return WIFI_AUTH_OPEN;
+}
 
 uint16_t WiFiOps::macToSuffix(const uint8_t* mac) {
   return ((uint16_t)mac[4] << 8) | mac[5];
