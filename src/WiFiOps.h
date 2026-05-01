@@ -32,6 +32,18 @@ extern Display display;
 
 extern WebServer server;
 
+// ============================================================
+// Chunk 5: Geofence entry struct
+// Populated from settings "geo_0".."geo_4" JSON strings.
+// ============================================================
+struct GeofenceEntry {
+  float  lat   = 0.0f;
+  float  lon   = 0.0f;
+  int    rad   = 0;      // radius in metres; 0 = unconfigured
+  String label = "";
+  bool   valid = false;  // true when rad > 0 and lat/lon non-zero
+};
+
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
@@ -141,6 +153,36 @@ class WiFiOps
     String security_int_to_string(int security_type);
     void processWardrive(uint16_t networks);
     void shutdownAccessPoint(bool ap_active = true);
+    bool isSSIDExcluded(const String& ssid, const String* list, int count); // Chunk 4
+
+    // --------------------------------------------------------
+    // Chunk 5: Geofence private members
+    // --------------------------------------------------------
+    GeofenceEntry geo_cache[MAX_GEOFENCES]; // parsed geofence entries
+    bool          geo_cache_loaded  = false;
+    bool          geo_display_shown = false; // tracks TFT state to avoid redraw spam
+
+    void  loadGeofenceCache();
+    float haversineDistance(float lat1, float lon1,
+                            float lat2, float lon2);
+    bool  checkGeofences(); // returns true if current pos is inside any zone
+
+    // --------------------------------------------------------
+    // Chunk 6: Dock mode private state and methods
+    // --------------------------------------------------------
+    int      dock_state            = DOCK_STATE_NONE;
+    int      dock_connect_attempts = 0;
+    uint32_t dock_fail_time        = 0;
+    uint32_t dock_last_scan_time   = 0;
+    int      dock_depart_count     = 0;
+    uint32_t geo_passive_scan_time = 0; // for geofence-paused trigger scans
+
+    bool scanForTriggerSSID();    // synchronous passive scan for trigger SSID
+    void runDockMode(uint32_t currentTime);
+    void handleDockConnecting();
+    void handleDockUploading();
+    void handleDockMonitoring(uint32_t currentTime);
+    void departDock();
 
   public:
     #ifdef CORE
@@ -163,6 +205,18 @@ class WiFiOps
 
     String esp_now_key = "";
 
+    // --------------------------------------------------------
+    // Chunk 5: Geofence public state
+    // --------------------------------------------------------
+    bool   in_geofence       = false;
+    String current_geo_label = "";
+    void   reloadGeofenceCache(); // call after settings change
+
+    // --------------------------------------------------------
+    // Chunk 6: Dock mode public state
+    // --------------------------------------------------------
+    String dock_ip = ""; // IP address shown on TFT while docked
+
     bool begin(bool skip_admin = false);
     void main(uint32_t currentTime);
     void startLog(String file_name);
@@ -172,6 +226,18 @@ class WiFiOps
     void deinitWiFi();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
     bool backendUpload(String filePath);
+
+    // --------------------------------------------------------
+    // Chunk 3: WDG Wars upload + sidecar tracking system
+    // --------------------------------------------------------
+    bool wdgwarsUpload(String filePath);       // upload one file to WDG Wars
+    bool sidecarExists(String filePath,
+                       String service);        // check .wigle / .wdg sidecar
+    void writeSidecar(String filePath,
+                      String service);         // write sidecar on success
+    bool uploadFile(String filePath,
+                    bool retry = false);       // upload to both services (sidecar-aware)
+    void uploadAllPending();                   // scan SD and upload all files missing sidecars
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
     void setTotalNetCount(uint32_t count);
@@ -200,6 +266,7 @@ class WiFiOps
     void startAccessPoint();
     void serveConfigPage();
     bool monitorAP(unsigned long timeoutMs = WEB_PAGE_TIMEOUT);
+    bool checkAuth(); // Chunk 1: Basic Auth check for web UI
 
     static void setFixedChannel(uint8_t ch);
     static bool addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]);

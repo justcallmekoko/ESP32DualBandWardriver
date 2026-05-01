@@ -1208,8 +1208,28 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
 
   int scan_status = -1;
 
-
   if ((this->run_mode == SOLO_MODE) || (this->run_mode == NODE_MODE)) {
+
+    // ---- Chunk 5: geofence check ----
+    // Only check when we have a GPS fix — no position, no geofence.
+    // Dock mode (Chunk 6) handles K1T upload trigger while paused.
+    if (gps.getGpsModuleStatus() && gps.getFixStatus()) {
+      if (this->checkGeofences()) {
+        // Chunk 6: while geofence-paused, periodically scan for trigger SSID
+        // so K1T can still trigger a dock+upload even when wardriving is paused.
+        if (millis() - this->geo_passive_scan_time >= DOCK_SCAN_INTERVAL) {
+          this->geo_passive_scan_time = millis();
+          if (this->scanForTriggerSSID()) {
+            Logger::log(STD_MSG, "[DOCK] Trigger SSID found during geofence pause");
+            this->dock_state            = DOCK_STATE_CONNECTING;
+            this->dock_connect_attempts = 0;
+          }
+        }
+        return -1; // inside a geofence — pause wardriving
+      }
+    }
+    // ---- end geofence check ----
+
     // Check GPS status
     if (((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) || 
         (this->run_mode == NODE_MODE)) {
@@ -1229,6 +1249,23 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
           Logger::log(WARN_MSG, "WiFi scan failed to start!");
       }
       else {
+        // ---- Chunk 6: check for trigger SSID in scan results ----
+        // Do this BEFORE processWardrive so we can abort gracefully
+        // if we need to switch to dock mode.
+        String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+        if (!trigSSID.isEmpty()) {
+          for (int j = 0; j < scan_status; j++) {
+            if (WiFi.SSID(j) == trigSSID) {
+              Logger::log(STD_MSG, "[DOCK] Trigger SSID detected in scan: " + trigSSID);
+              WiFi.scanDelete();
+              this->dock_state            = DOCK_STATE_CONNECTING;
+              this->dock_connect_attempts = 0;
+              return scan_status; // main() will call runDockMode next cycle
+            }
+          }
+        }
+        // ---- end trigger SSID check ----
+
         this->current_net_count = 0;
         this->current_ble_count = 0;
         this->current_2g4_count = 0;
@@ -1263,9 +1300,180 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
   return scan_status;
 }
 
+// ============================================================
+// Chunk 5: Geofence — Haversine distance, cache loader,
+//           and zone check with enter/exit logging
+// ============================================================
+
+// Haversine formula — returns great-circle distance in metres.
+// Accurate to within ~0.5% which is well within any practical
+// geofence radius.
+float WiFiOps::haversineDistance(float lat1, float lon1,
+                                  float lat2, float lon2) {
+  const float R = 6371000.0f; // Earth mean radius, metres
+  float phi1  = lat1 * DEG_TO_RAD;
+  float phi2  = lat2 * DEG_TO_RAD;
+  float dphi  = (lat2 - lat1) * DEG_TO_RAD;
+  float dlam  = (lon2 - lon1) * DEG_TO_RAD;
+
+  float a = sinf(dphi / 2.0f) * sinf(dphi / 2.0f) +
+            cosf(phi1) * cosf(phi2) *
+            sinf(dlam / 2.0f) * sinf(dlam / 2.0f);
+  float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
+  return R * c;
+}
+
+// Parse all geo_0..geo_4 settings into geo_cache[].
+// Called once from begin() and on-demand via reloadGeofenceCache().
+// An entry is marked valid only when radius > 0 and lat/lon are set.
+void WiFiOps::loadGeofenceCache() {
+  int valid_count = 0;
+
+  for (int i = 0; i < MAX_GEOFENCES; i++) {
+    geo_cache[i].valid = false;
+
+    String geoStr = settings.loadSetting<String>("geo_" + String(i));
+    if (geoStr.isEmpty()) continue;
+
+    DynamicJsonDocument doc(256);
+    if (deserializeJson(doc, geoStr) != DeserializationError::Ok) {
+      Logger::log(WARN_MSG, "[GEO] Bad JSON for geo_" + String(i));
+      continue;
+    }
+
+    float  lat   = doc["lat"]   | 0.0f;
+    float  lon   = doc["lon"]   | 0.0f;
+    int    rad   = doc["rad"]   | 0;
+    String label = doc["label"] | "";
+
+    if (rad <= 0) continue;           // unconfigured slot
+    if (lat == 0.0f && lon == 0.0f) continue; // default placeholder
+
+    geo_cache[i].lat   = lat;
+    geo_cache[i].lon   = lon;
+    geo_cache[i].rad   = rad;
+    geo_cache[i].label = label.isEmpty() ? ("Zone " + String(i + 1)) : label;
+    geo_cache[i].valid = true;
+    valid_count++;
+
+    Logger::log(GUD_MSG, "[GEO] Loaded zone " + String(i + 1) +
+                ": \"" + geo_cache[i].label +
+                "\" lat=" + String(lat, 6) +
+                " lon=" + String(lon, 6) +
+                " rad=" + String(rad) + "m");
+  }
+
+  geo_cache_loaded = true;
+  Logger::log(STD_MSG, "[GEO] Cache loaded: " + String(valid_count) +
+              " active zone(s)");
+}
+
+// Public: invalidate cache so it reloads on next checkGeofences() call.
+// Call this after saving new geofence settings.
+void WiFiOps::reloadGeofenceCache() {
+  geo_cache_loaded = false;
+  Logger::log(STD_MSG, "[GEO] Cache invalidated — will reload on next check");
+}
+
+// Check whether the current GPS position falls inside any configured zone.
+// Handles enter/exit state transitions with logging and TFT feedback.
+// Returns true if inside any zone (wardriving should pause).
+bool WiFiOps::checkGeofences() {
+  // Lazy-load cache if not yet populated
+  if (!geo_cache_loaded)
+    this->loadGeofenceCache();
+
+  // Quick exit if no zones are configured
+  bool any_valid = false;
+  for (int i = 0; i < MAX_GEOFENCES; i++) {
+    if (geo_cache[i].valid) { any_valid = true; break; }
+  }
+  if (!any_valid) return false;
+
+  float cur_lat = gps.getLat().toFloat();
+  float cur_lon = gps.getLon().toFloat();
+
+  for (int i = 0; i < MAX_GEOFENCES; i++) {
+    if (!geo_cache[i].valid) continue;
+
+    float dist = this->haversineDistance(cur_lat, cur_lon,
+                                          geo_cache[i].lat,
+                                          geo_cache[i].lon);
+
+    if (dist <= (float)geo_cache[i].rad) {
+      // Inside this zone
+      bool was_in = this->in_geofence;
+      bool label_changed = (this->current_geo_label != geo_cache[i].label);
+
+      if (!was_in || label_changed) {
+        // Entering or switching zones — log the transition
+        this->in_geofence       = true;
+        this->current_geo_label = geo_cache[i].label;
+
+        Logger::log(STD_MSG, "[GEO] Entered zone: \"" +
+                    this->current_geo_label + "\"  dist=" +
+                    String((int)dist) + "m  rad=" +
+                    String(geo_cache[i].rad) + "m");
+
+        // Update TFT to show paused state
+        display.clearScreen();
+        display.tft->setCursor(0, 0);
+        display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+        display.tft->println("GEOFENCE PAUSED");
+        display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+        display.tft->println(this->current_geo_label);
+        display.tft->println("Dist: " + String((int)dist) + "m");
+        this->geo_display_shown = true;
+      }
+
+      return true;
+    }
+  }
+
+  // Not inside any zone — handle exit transition
+  if (this->in_geofence) {
+    Logger::log(STD_MSG, "[GEO] Exited zone: \"" +
+                this->current_geo_label + "\" — resuming wardrive");
+    this->in_geofence       = false;
+    this->current_geo_label = "";
+    this->geo_display_shown = false;
+
+    // Clear geofence display so normal UI can reclaim TFT
+    display.clearScreen();
+  }
+
+  return false;
+}
+
+// ============================================================
+// Chunk 4: SSID exclusion helper
+// Checks a sanitized SSID against the caller's pre-loaded
+// exclusion list. Empty exclusion slots are skipped.
+// Comparison is case-sensitive (SSIDs are case-sensitive).
+// ============================================================
+bool WiFiOps::isSSIDExcluded(const String& ssid,
+                              const String* list, int count) {
+  if (ssid.isEmpty()) return false;
+  for (int i = 0; i < count; i++) {
+    if (!list[i].isEmpty() && list[i] == ssid)
+      return true;
+  }
+  return false;
+}
+
 void WiFiOps::processWardrive(uint16_t networks) {
   String display_string;
   bool do_save;
+
+  // ---- Chunk 4: load exclusion list once per scan cycle ----
+  // Doing this outside the network loop avoids re-parsing the
+  // settings JSON for every scanned network.
+  String exclusions[MAX_SSID_EXCLUSIONS];
+  int exclusion_count = 0;
+  for (int e = 0; e < MAX_SSID_EXCLUSIONS; e++) {
+    exclusions[e] = settings.loadSetting<String>("sx_" + String(e));
+    if (!exclusions[e].isEmpty()) exclusion_count++;
+  }
 
   // Process results if networks found
   if (networks > 0) {
@@ -1284,17 +1492,28 @@ void WiFiOps::processWardrive(uint16_t networks) {
       this->save_mac(this_bssid_raw);
 
       if (this->run_mode == SOLO_MODE) {
-        this->setCurrentNetCount(this->getCurrentNetCount() + 1);
 
+        // ---- Chunk 4: SSID exclusion check ----
+        // Pull SSID before the counters so excluded networks
+        // don't inflate the displayed scan count.
+        String ssid = WiFi.SSID(i);
+        ssid.replace(",","_");
+
+        if (exclusion_count > 0 &&
+            this->isSSIDExcluded(ssid, exclusions, MAX_SSID_EXCLUSIONS)) {
+          Logger::log(STD_MSG, "[EXCL] Skipping excluded SSID: \"" + ssid + "\"");
+          digitalWrite(LED_PIN, LOW);
+          continue;
+        }
+        // ---- end exclusion check ----
+
+        this->setCurrentNetCount(this->getCurrentNetCount() + 1);
         this->setTotalNetCount(this->getTotalNetCount() + 1);
 
         if (WiFi.channel(i) > 14)
           this->setCurrent5gCount(this->getCurrent5gCount() + 1);
         else
           this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
-
-        String ssid = WiFi.SSID(i);
-        ssid.replace(",","_");
 
         if (ssid != "") {
           display_string.concat(ssid);
@@ -1323,7 +1542,6 @@ void WiFiOps::processWardrive(uint16_t networks) {
           //display_obj.display_buffer->add(display_string);
         #endif
 
-
         String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
@@ -1337,6 +1555,14 @@ void WiFiOps::processWardrive(uint16_t networks) {
       else if (this->run_mode == NODE_MODE) {
         String ssid = WiFi.SSID(i);
         ssid.replace(",","_");
+
+        // ---- Chunk 4: exclusion filter for NODE_MODE too ----
+        if (exclusion_count > 0 &&
+            this->isSSIDExcluded(ssid, exclusions, MAX_SSID_EXCLUSIONS)) {
+          Logger::log(STD_MSG, "[EXCL] Node skipping excluded SSID: \"" + ssid + "\"");
+          continue;
+        }
+
         String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
         if (this->use_encryption)
@@ -1447,19 +1673,54 @@ void WiFiOps::clearMacHistory() {
 }
 
 void WiFiOps::startLog(String file_name) {
+  // Build WiGLE-convention filename: wigle-YYYY-MM-DDTHHMMSS+0000.log
+  // Falls back to base file_name if GPS has no fix yet
+  String timestamped_name = file_name;
+  if (gps.getFixStatus()) {
+    // Pull raw components from GPS (MicroNMEA provides these individually)
+    // We build the filename ourselves to get proper zero-padding
+    char fname[48];
+    // gps.getDatetime() returns "YYYY-M-D H:MM:SS" — not suitable directly,
+    // so we reconstruct from the wardrive line fields via the buffer datetime.
+    // For now use the formatted datetime string and reformat it.
+    // Format stored is "YYYY-M-D H:MM:SS" — parse and reformat.
+    String dt = gps.getDatetime(); // e.g. "2026-5-1 13:34:37"
+    if (dt.length() >= 10) {
+      // Extract fields robustly
+      int y = dt.substring(0, 4).toInt();
+      int mo = dt.substring(5, dt.indexOf('-', 5)).toInt();
+      int rest = dt.indexOf('-', 5);
+      int d  = dt.substring(rest + 1, dt.indexOf(' ')).toInt();
+      int sp = dt.indexOf(' ');
+      int h  = dt.substring(sp + 1, dt.indexOf(':', sp)).toInt();
+      int c1 = dt.indexOf(':', sp);
+      int mi = dt.substring(c1 + 1, dt.indexOf(':', c1 + 1)).toInt();
+      int c2 = dt.indexOf(':', c1 + 1);
+      int s  = dt.substring(c2 + 1).toInt();
+      snprintf(fname, sizeof(fname), "wigle-%04d-%02d-%02dT%02d%02d%02d+0000",
+               y, mo, d, h, mi, s);
+      timestamped_name = String(fname);
+    }
+  }
+
   buffer.logOpen(
-    file_name,
+    timestamped_name,
     #if defined(HAS_SD)
       sd_obj.supported ? &SD :
     #endif
     NULL,
-    false // Set with commandline options
+    false
   );
 
-  String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION + ",model=" + (String)DEVICE_NAME + ",release=" + (String)FIRMWARE_VERSION + ",device=" + (String)DEVICE_NAME + ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
+  String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION +
+                       ",model=" + (String)DEVICE_NAME +
+                       ",release=" + (String)FIRMWARE_VERSION +
+                       ",device=" + (String)DEVICE_NAME +
+                       ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\n"
+                       "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
+                       "CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
   buffer.append(header_line + "\n");
-  Logger::log(GUD_MSG, "Wigle Header: " + header_line);
-
+  Logger::log(GUD_MSG, "Log started: " + timestamped_name + ".log");
 }
 
 void WiFiOps::initWiFi(bool set_country) {
@@ -1740,49 +2001,402 @@ bool WiFiOps::backendUpload(String filePath) {
     return true;
 }
 
+// ============================================================
+// Chunk 3: WDG Wars upload + sidecar tracking system
+// ============================================================
+
+// Check whether a service sidecar exists for a given log file.
+// service is "wigle" or "wdg".
+// filePath should include leading slash, e.g. "/wardrive.log"
+bool WiFiOps::sidecarExists(String filePath, String service) {
+  return SD.exists(filePath + "." + service);
+}
+
+// Write a sidecar file recording the upload timestamp.
+void WiFiOps::writeSidecar(String filePath, String service) {
+  String sidecarPath = filePath + "." + service;
+  File f = SD.open(sidecarPath, FILE_WRITE);
+  if (f) {
+    f.println("uploaded=" + gps.getDatetime());
+    f.close();
+    Logger::log(GUD_MSG, "[UPLOAD] Sidecar written: " + sidecarPath);
+  } else {
+    Logger::log(WARN_MSG, "[UPLOAD] Could not write sidecar: " + sidecarPath);
+  }
+}
+
+// Upload one log file to WDG Wars.
+// Mirrors backendUpload() but uses X-API-Key auth and wdgwars.pl endpoint.
+bool WiFiOps::wdgwarsUpload(String filePath) {
+  display.clearScreen();
+  display.drawCenteredText("WDG Upload...", true);
+  delay(100);
+
+  if (!SD.exists(filePath)) {
+    display.drawCenteredText(filePath + " not found", true);
+    Logger::log(WARN_MSG, "[WDG] File not found: " + filePath);
+    return false;
+  }
+
+  String apiKey = settings.loadSetting<String>(WDG_KEY_NAME);
+  if (apiKey.isEmpty()) {
+    display.clearScreen();
+    display.drawCenteredText("No WDG API key", true);
+    Logger::log(WARN_MSG, "[WDG] No WDG Wars API key configured");
+    return false;
+  }
+
+  File fileToUpload = SD.open(filePath);
+  if (!fileToUpload) {
+    display.clearScreen();
+    display.drawCenteredText("Could not open file", true);
+    Logger::log(WARN_MSG, "[WDG] Could not open: " + filePath);
+    return false;
+  }
+
+  // Build multipart body
+  String boundary   = "----ESP32BOUNDARY";
+  String part1      = "--" + boundary + "\r\n";
+  part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" +
+           filePath + "\"\r\n";
+  part1 += "Content-Type: application/octet-stream\r\n\r\n";
+  String part2      = "\r\n--" + boundary + "--\r\n";
+  int totalLength   = part1.length() + fileToUpload.size() + part2.length();
+
+  Logger::log(STD_MSG, "[WDG] File size: " + String(fileToUpload.size()));
+  Logger::log(STD_MSG, "[WDG] Total length: " + String(totalLength));
+
+  client->setInsecure();
+  if (!client->connect("wdgwars.pl", 443)) {
+    fileToUpload.close();
+    client->stop();
+    display.clearScreen();
+    display.drawCenteredText("WDG connect fail", true);
+    Logger::log(WARN_MSG, "[WDG] Failed to connect to wdgwars.pl");
+    return false;
+  }
+
+  // HTTP request
+  client->println("POST /api/upload-csv HTTP/1.1");
+  client->println("Host: wdgwars.pl");
+  client->println("User-Agent: ESP32Uploader/1.0");
+  client->println("Accept: application/json");
+  client->println("X-API-Key: " + apiKey);
+  client->println("Content-Type: multipart/form-data; boundary=" + boundary);
+  client->print("Content-Length: ");
+  client->println(totalLength);
+  client->println();
+
+  // Send body
+  client->print(part1);
+
+  const size_t CHUNK = 4096;
+  uint8_t buf[CHUNK];
+  size_t totalSent = 0;
+  uint8_t pct = 0;
+  String pctStr;
+
+  while (fileToUpload.available()) {
+    size_t n = fileToUpload.read(buf, CHUNK);
+    totalSent += n;
+    client->write(buf, n);
+    pct = (totalSent * 100) / fileToUpload.size();
+    display.tft->drawRect(0, (TFT_HEIGHT / 3) * 2, TFT_WIDTH,
+                          TFT_HEIGHT - (TFT_HEIGHT / 3) * 2, ST77XX_BLACK);
+    display.tft->setCursor(0, (TFT_HEIGHT / 3) * 2);
+    pctStr = String(pct) + "%";
+    display.drawCenteredText(pctStr, false);
+  }
+
+  client->print(part2);
+  fileToUpload.close();
+
+  Logger::log(STD_MSG, "[WDG] Bytes sent: " + String(totalSent));
+
+  // Read response
+  String response;
+  unsigned long t = millis();
+  while (millis() - t < 5000) {
+    while (client->available()) {
+      char c = client->read();
+      response += c;
+    }
+  }
+  client->stop();
+
+  Serial.println("[WDG] Response:");
+  Serial.println(response);
+
+  // WDG Wars returns 200 on success
+  bool ok = response.indexOf("HTTP/1.1 200") >= 0 ||
+            response.indexOf("HTTP/1.0 200") >= 0 ||
+            response.indexOf("\"success\"") >= 0;
+
+  display.clearScreen();
+  display.drawCenteredText(ok ? "WDG OK" : "WDG Failed", true);
+  delay(1000);
+
+  return ok;
+}
+
+// Upload a single file to both WiGLE and WDG Wars.
+// Skips any service that already has a sidecar, unless retry=true.
+// Writes sidecar for each service that succeeds.
+// Returns true only if both uploads succeed (or were already done).
+bool WiFiOps::uploadFile(String filePath, bool retry) {
+  Logger::log(STD_MSG, "[UPLOAD] uploadFile: " + filePath +
+              (retry ? " (retry)" : ""));
+
+  bool wigle_already = !retry && this->sidecarExists(filePath, "wigle");
+  bool wdg_already   = !retry && this->sidecarExists(filePath, "wdg");
+
+  bool wigle_ok = wigle_already;
+  bool wdg_ok   = wdg_already;
+
+  if (!wigle_already) {
+    Logger::log(STD_MSG, "[UPLOAD] Uploading to WiGLE: " + filePath);
+    wigle_ok = this->backendUpload(filePath);
+    if (wigle_ok) {
+      this->writeSidecar(filePath, "wigle");
+      Logger::log(GUD_MSG, "[UPLOAD] WiGLE upload succeeded");
+    } else {
+      Logger::log(WARN_MSG, "[UPLOAD] WiGLE upload failed");
+    }
+  } else {
+    Logger::log(STD_MSG, "[UPLOAD] WiGLE already uploaded, skipping");
+  }
+
+  if (!wdg_already) {
+    Logger::log(STD_MSG, "[UPLOAD] Uploading to WDG Wars: " + filePath);
+    wdg_ok = this->wdgwarsUpload(filePath);
+    if (wdg_ok) {
+      this->writeSidecar(filePath, "wdg");
+      Logger::log(GUD_MSG, "[UPLOAD] WDG Wars upload succeeded");
+    } else {
+      Logger::log(WARN_MSG, "[UPLOAD] WDG Wars upload failed");
+    }
+  } else {
+    Logger::log(STD_MSG, "[UPLOAD] WDG Wars already uploaded, skipping");
+  }
+
+  return wigle_ok && wdg_ok;
+}
+
+// Scan the SD card root for all .log files that are missing at least
+// one service sidecar, and upload them. Used by dock mode (Chunk 6).
+void WiFiOps::uploadAllPending() {
+  Logger::log(STD_MSG, "[UPLOAD] Scanning SD for pending uploads...");
+
+  if (!sd_obj.supported) {
+    Logger::log(WARN_MSG, "[UPLOAD] SD not available");
+    return;
+  }
+
+  File root = SD.open("/");
+  if (!root || !root.isDirectory()) {
+    Logger::log(WARN_MSG, "[UPLOAD] Could not open SD root");
+    return;
+  }
+
+  int uploaded = 0;
+  int skipped  = 0;
+  int failed   = 0;
+
+  File f = root.openNextFile();
+  while (f) {
+    if (!f.isDirectory()) {
+      String name = f.name();
+      if (name.endsWith(".log")) {
+        String path = "/" + name;
+        bool wigle_done = this->sidecarExists(path, "wigle");
+        bool wdg_done   = this->sidecarExists(path, "wdg");
+
+        if (wigle_done && wdg_done) {
+          skipped++;
+        } else {
+          Logger::log(STD_MSG, "[UPLOAD] Pending: " + path);
+          bool ok = this->uploadFile(path, false);
+          if (ok) uploaded++;
+          else    failed++;
+        }
+      }
+    }
+    f = root.openNextFile();
+  }
+
+  Logger::log(GUD_MSG, "[UPLOAD] Done. Uploaded:" + String(uploaded) +
+              " Skipped:" + String(skipped) + " Failed:" + String(failed));
+}
+
+// ============================================================
+// Returns true if auth passes (or no password is set).
+// Sends 401 and returns false if auth fails.
+// ============================================================
+bool WiFiOps::checkAuth() {
+  String adminPass = settings.loadSetting<String>(ADMIN_PASS_NAME);
+  if (adminPass.isEmpty()) return true; // no password set — open access
+
+  // Expect "Authorization: Basic <base64("admin:<pass>")>"
+  String expected = "Basic " + utils.base64Encode("admin:" + adminPass);
+  if (server.hasHeader("Authorization") &&
+      server.header("Authorization") == expected) {
+    return true;
+  }
+
+  server.sendHeader("WWW-Authenticate", "Basic realm=\"C5 Wardriver\"");
+  server.send(401, "text/plain", "Authentication required");
+  return false;
+}
+
 void WiFiOps::serveConfigPage() {
+
+  // ---- GET / : main config page ----
   server.on("/", HTTP_GET, [this]() {
+    if (!this->checkAuth()) return;
     this->last_web_client_activity = millis();
-    String html = R"rawliteral(
-      <html><body>
-      <h2>WiFi Configuration</h2>
-      <form action="/save" method="POST">
-        SSID: <input type="text" name="ssid"><br>
-        Password: <input type="password" name="password"><br>
-        WiGLE API Name: <input type="text" name="wigle_user"><br>
-        WiGLE API Token: <input type="password" name="wigle_token"><br>
-        ENOW Key: <input type="text" name="enow_key"><br><br>
 
-        <h3>Device Mode</h3>
-        <input type="radio" id="solo" name="device_mode" value="solo">
-        <label for="solo">Solo</label><br>
+    // Load current values to pre-populate the form
+    String cur_ssid        = settings.loadSetting<String>("s");
+    String cur_wigle_user  = settings.loadSetting<String>("wu");
+    String cur_wdg_key     = settings.loadSetting<String>(WDG_KEY_NAME);
+    String cur_t_ssid      = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+    bool   cur_po_en       = settings.loadSetting<bool>(POWEROFF_EN_NAME);
+    int    cur_po_min      = settings.loadSetting<int>(POWEROFF_MIN_NAME);
+    int    cur_mode        = settings.loadSetting<int>("m");
+    bool   cur_enc         = settings.loadSetting<bool>("e");
 
-        <input type="radio" id="core" name="device_mode" value="core">
-        <label for="core">Core</label><br>
+    String html = "<html><body>";
+    html += "<h2>JCMK C5 Wardriver &mdash; Configuration</h2>";
+    html += "<form action=\"/save\" method=\"POST\">";
 
-        <input type="radio" id="node" name="device_mode" value="node">
-        <label for="node">Node</label><br><br>
+    // ---- Network ----
+    html += "<h3>Network</h3>";
+    html += "AP SSID: <input type=\"text\" name=\"ssid\" value=\"" + cur_ssid + "\"><br>";
+    html += "AP Password: <input type=\"password\" name=\"password\" placeholder=\"leave blank to keep\"><br>";
 
-        <input type="submit" value="Save"><br><br>
+    // ---- WiGLE ----
+    html += "<h3>WiGLE</h3>";
+    html += "API Name: <input type=\"text\" name=\"wigle_user\" value=\"" + cur_wigle_user + "\"><br>";
+    html += "API Token: <input type=\"password\" name=\"wigle_token\" placeholder=\"leave blank to keep\"><br>";
 
-        <h3>Use Encryption</h3>
-        <input type="checkbox" id="use_encryption" name="use_encryption" value="true">
-        <br>
-      </form>
-      <h2>Files on SD Card</h2>
-    )rawliteral";
+    // ---- WDG Wars ----
+    html += "<h3>WDG Wars</h3>";
+    html += "API Key: <input type=\"password\" name=\"wdg_key\" placeholder=\"leave blank to keep\">";
+    if (!cur_wdg_key.isEmpty()) html += " <em>(key saved)</em>";
+    html += "<br>";
 
+    // ---- Dock Mode ----
+    html += "<h3>Dock Mode</h3>";
+    html += "<small>The trigger SSID (e.g. K1T or a phone hotspot) causes the wardriver to pause, ";
+    html += "connect, and upload all pending logs to WiGLE and WDG Wars.</small><br><br>";
+    html += "Trigger SSID: <input type=\"text\" name=\"trigger_ssid\" value=\"" + cur_t_ssid + "\"><br>";
+    html += "Trigger Password: <input type=\"password\" name=\"trigger_pass\" placeholder=\"leave blank to keep\"><br>";
+
+    // ---- Power Management ----
+    html += "<h3>Power Management</h3>";
+    html += "Enable Power-Off Timer: <input type=\"checkbox\" name=\"poweroff_en\" value=\"true\"";
+    if (cur_po_en) html += " checked";
+    html += "><br>";
+    html += "Power-Off Delay (minutes, 1-60): <input type=\"number\" name=\"poweroff_mins\" min=\"1\" max=\"60\" value=\"";
+    html += String(cur_po_min > 0 ? cur_po_min : POWEROFF_DEFAULT_MINS);
+    html += "\"><br>";
+
+    // ---- Admin ----
+    html += "<h3>Admin</h3>";
+    html += "<small>Setting a password enables Basic Auth on the web UI. ";
+    html += "Recommended when using dock mode web server on a shared network.</small><br><br>";
+    html += "Admin Password: <input type=\"password\" name=\"admin_pass\" placeholder=\"leave blank to keep current\"><br>";
+
+    // ---- SSID Exclusions ----
+    html += "<h3>SSID Exclusions (up to " + String(MAX_SSID_EXCLUSIONS) + ")</h3>";
+    html += "<small>Networks matching these SSIDs will never be logged.</small><br><br>";
+    for (int i = 0; i < MAX_SSID_EXCLUSIONS; i++) {
+      String val = settings.loadSetting<String>("sx_" + String(i));
+      html += "Exclusion " + String(i + 1) + ": <input type=\"text\" name=\"sx_" + String(i) +
+              "\" value=\"" + val + "\"><br>";
+    }
+
+    // ---- Geofences ----
+    html += "<h3>Geofences (up to " + String(MAX_GEOFENCES) + ")</h3>";
+    html += "<small>Wardriving pauses while inside any geofenced zone. ";
+    html += "If the trigger SSID is visible inside a zone, upload is attempted.</small><br><br>";
+    for (int i = 0; i < MAX_GEOFENCES; i++) {
+      String geoStr = settings.loadSetting<String>("geo_" + String(i));
+      float  gLat = 0.0, gLon = 0.0;
+      int    gRad = 0;
+      String gLabel = "";
+
+      // Parse stored JSON geo string
+      DynamicJsonDocument geoDoc(256);
+      if (!geoStr.isEmpty() && deserializeJson(geoDoc, geoStr) == DeserializationError::Ok) {
+        gLat   = geoDoc["lat"]   | 0.0f;
+        gLon   = geoDoc["lon"]   | 0.0f;
+        gRad   = geoDoc["rad"]   | 0;
+        gLabel = geoDoc["label"] | "";
+      }
+
+      html += "<strong>Zone " + String(i + 1) + "</strong><br>";
+      html += "&nbsp;&nbsp;Label: <input type=\"text\" name=\"geo_" + String(i) + "_label\" value=\"" + gLabel + "\"> ";
+      html += "Radius (m): <input type=\"number\" name=\"geo_" + String(i) + "_rad\" value=\"" + String(gRad) + "\" min=\"0\" style=\"width:70px\"><br>";
+      html += "&nbsp;&nbsp;Lat: <input type=\"text\" name=\"geo_" + String(i) + "_lat\" value=\"" + String(gLat, 6) + "\" style=\"width:110px\"> ";
+      html += "Lon: <input type=\"text\" name=\"geo_" + String(i) + "_lon\" value=\"" + String(gLon, 6) + "\" style=\"width:110px\"><br><br>";
+    }
+
+    // ---- Device Mode ----
+    html += "<h3>Device Mode</h3>";
+    html += "<input type=\"radio\" name=\"device_mode\" value=\"solo\"" + String(cur_mode == SOLO_MODE ? " checked" : "") + "> Solo<br>";
+    html += "<input type=\"radio\" name=\"device_mode\" value=\"core\"" + String(cur_mode == CORE_MODE ? " checked" : "") + "> Core<br>";
+    html += "<input type=\"radio\" name=\"device_mode\" value=\"node\"" + String(cur_mode == NODE_MODE ? " checked" : "") + "> Node<br><br>";
+
+    // ---- Encryption ----
+    html += "<h3>Encryption (ESP-NOW)</h3>";
+    html += "ENOW Key: <input type=\"text\" name=\"enow_key\" placeholder=\"leave blank to keep\"><br>";
+    html += "Use Encryption: <input type=\"checkbox\" name=\"use_encryption\" value=\"true\"";
+    if (cur_enc) html += " checked";
+    html += "><br><br>";
+
+    html += "<input type=\"submit\" value=\"Save Settings\">";
+    html += "</form>";
+
+    // ---- Files on SD Card ----
+    html += "<h2>Files on SD Card</h2>";
     File root = SD.open("/");
     if (root && root.isDirectory()) {
       File file = root.openNextFile();
       while (file) {
         if (!file.isDirectory()) {
           String filename = file.name();
-          if ((filename.endsWith(".log")) && (this->connected_as_client)) {
-            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> | ";
-            html += "<a href=\"/upload?file=" + filename + "\">Upload to WiGLE</a> " + (String)file.size() + " Bytes <br>";
-          } else {
-            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> " + (String)file.size() + " Bytes <br>";
+          if (filename.endsWith(".log")) {
+            // Check sidecar upload status
+            bool wigleDone = SD.exists("/" + filename + ".wigle");
+            bool wdgDone   = SD.exists("/" + filename + ".wdg");
+
+            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> ";
+            html += String(file.size()) + " B";
+
+            if (this->connected_as_client) {
+              // Upload links with per-service status
+              if (!wigleDone)
+                html += " | <a href=\"/upload?file=" + filename + "&svc=wigle\">Upload WiGLE</a>";
+              else
+                html += " | <em>WiGLE&check;</em>";
+
+              if (!wdgDone)
+                html += " | <a href=\"/upload?file=" + filename + "&svc=wdg\">Upload WDG</a>";
+              else
+                html += " | <em>WDG&check;</em>";
+
+              // Retry link if either failed
+              if (wigleDone && wdgDone)
+                html += " | <a href=\"/upload?file=" + filename + "&svc=both&retry=1\">Retry All</a>";
+              else if (!wigleDone || !wdgDone)
+                html += " | <a href=\"/upload?file=" + filename + "&svc=both\">Upload Both</a>";
+            }
+            html += "<br>";
+          } else if (!filename.endsWith(".wigle") && !filename.endsWith(".wdg")) {
+            // Show non-log, non-sidecar files for download only
+            html += "<a href=\"/download?file=" + filename + "\">" + filename + "</a> ";
+            html += String(file.size()) + " B<br>";
           }
         }
         file = root.openNextFile();
@@ -1795,72 +2409,145 @@ void WiFiOps::serveConfigPage() {
     server.send(200, "text/html", html);
   });
 
+  // ---- POST /save : save all settings ----
   server.on("/save", HTTP_POST, [this]() {
+    if (!this->checkAuth()) return;
     this->last_web_client_activity = millis();
-    if ((server.hasArg("ssid") && server.hasArg("password")) || (server.hasArg("wigle_user") && server.hasArg("wigle_token"))) {
-      if (server.hasArg("ssid")) {
-        if (server.arg("ssid") != "") {
-          this->user_ap_ssid = server.arg("ssid");
-          settings.saveSetting<bool>("s", this->user_ap_ssid);
-        } 
-      } 
-      if (server.hasArg("password")) {
-        if (server.arg("password") != "") {
-          this->user_ap_password = server.arg("password");
-          settings.saveSetting<bool>("p", this->user_ap_password);
-        } 
-      } 
-      if (server.hasArg("wigle_user")) {
-        if (server.arg("wigle_user") != "") {
-          this->wigle_user = server.arg("wigle_user");
-          settings.saveSetting<bool>("wu", this->wigle_user);
-        }
-      } 
-      if (server.hasArg("wigle_token")) {
-        if (server.arg("wigle_token") != "") {
-          this->wigle_token = server.arg("wigle_token");
-          settings.saveSetting<bool>("wt", this->wigle_token);
-        } 
-      } 
-      if (server.hasArg("enow_key")) {
-        if (server.arg("enow_key") != "") {
-          this->esp_now_key = server.arg("enow_key");
-          settings.saveSetting<bool>("ek", this->esp_now_key);
-        } 
-      } 
-      if (server.hasArg("device_mode")) {
-        if (server.arg("device_mode") != "") {
-          int mode_arg = 1;
-          if (server.arg("device_mode") == "solo")
-            mode_arg = SOLO_MODE;
-          else if (server.arg("device_mode") == "node")
-            mode_arg = NODE_MODE;
-          else if (server.arg("device_mode") == "core")
-            mode_arg = CORE_MODE;
-          this->run_mode = mode_arg;
-          settings.saveSetting<bool>("m", this->run_mode, true);
-        } 
-      } 
-      if (server.hasArg("use_encryption")) {
-        if (server.arg("use_encryption") == "true") {
-          this->use_encryption = true;
-        } 
-      } 
 
-      Logger::log(STD_MSG, "SSID: " + this->user_ap_ssid);
-      Logger::log(STD_MSG, "Wigle User: " + this->wigle_user);
-      Logger::log(STD_MSG, "ENOW Key: " + this->esp_now_key);
-      Logger::log(STD_MSG, "Mode: " + (String)this->run_mode);
+    bool anyChange = false;
 
-      server.send(200, "text/html", "Credentials saved. You can close this window.");
-      this->last_web_client_activity = 0;
-      this->shutdownAccessPoint();
-    } else {
-      server.send(400, "text/plain", "Missing SSID or password.");
+    // Network
+    if (server.hasArg("ssid") && server.arg("ssid") != "") {
+      this->user_ap_ssid = server.arg("ssid");
+      settings.saveSetting<bool>("s", this->user_ap_ssid);
+      anyChange = true;
     }
+    if (server.hasArg("password") && server.arg("password") != "") {
+      this->user_ap_password = server.arg("password");
+      settings.saveSetting<bool>("p", this->user_ap_password);
+      anyChange = true;
+    }
+
+    // WiGLE
+    if (server.hasArg("wigle_user") && server.arg("wigle_user") != "") {
+      this->wigle_user = server.arg("wigle_user");
+      settings.saveSetting<bool>("wu", this->wigle_user);
+      anyChange = true;
+    }
+    if (server.hasArg("wigle_token") && server.arg("wigle_token") != "") {
+      this->wigle_token = server.arg("wigle_token");
+      settings.saveSetting<bool>("wt", this->wigle_token);
+      anyChange = true;
+    }
+
+    // WDG Wars
+    if (server.hasArg("wdg_key") && server.arg("wdg_key") != "") {
+      settings.saveSetting<bool>(WDG_KEY_NAME, server.arg("wdg_key"));
+      anyChange = true;
+    }
+
+    // Dock Mode
+    if (server.hasArg("trigger_ssid")) {
+      settings.saveSetting<bool>(TRIGGER_SSID_NAME, server.arg("trigger_ssid"));
+      anyChange = true;
+    }
+    if (server.hasArg("trigger_pass") && server.arg("trigger_pass") != "") {
+      settings.saveSetting<bool>(TRIGGER_PASS_NAME, server.arg("trigger_pass"));
+      anyChange = true;
+    }
+
+    // Power Management
+    bool poEn = server.hasArg("poweroff_en") && server.arg("poweroff_en") == "true";
+    settings.saveSetting<bool>(POWEROFF_EN_NAME, poEn);
+    if (server.hasArg("poweroff_mins") && server.arg("poweroff_mins") != "") {
+      int mins = server.arg("poweroff_mins").toInt();
+      if (mins < 1)  mins = 1;
+      if (mins > 60) mins = 60;
+      settings.saveSetting<bool>(POWEROFF_MIN_NAME, mins, true);
+    }
+    anyChange = true;
+
+    // Admin password
+    if (server.hasArg("admin_pass") && server.arg("admin_pass") != "") {
+      settings.saveSetting<bool>(ADMIN_PASS_NAME, server.arg("admin_pass"));
+      anyChange = true;
+    }
+
+    // SSID exclusions
+    for (int i = 0; i < MAX_SSID_EXCLUSIONS; i++) {
+      String key = "sx_" + String(i);
+      if (server.hasArg(key)) {
+        settings.saveSetting<bool>(key, server.arg(key));
+        anyChange = true;
+      }
+    }
+
+    // Geofences — reconstruct JSON string from individual form fields
+    for (int i = 0; i < MAX_GEOFENCES; i++) {
+      String latKey   = "geo_" + String(i) + "_lat";
+      String lonKey   = "geo_" + String(i) + "_lon";
+      String radKey   = "geo_" + String(i) + "_rad";
+      String labelKey = "geo_" + String(i) + "_label";
+
+      if (server.hasArg(latKey)) {
+        float  lat   = server.arg(latKey).toFloat();
+        float  lon   = server.arg(lonKey).toFloat();
+        int    rad   = server.arg(radKey).toInt();
+        String label = server.arg(labelKey);
+
+        DynamicJsonDocument geoDoc(256);
+        geoDoc["lat"]   = lat;
+        geoDoc["lon"]   = lon;
+        geoDoc["rad"]   = rad;
+        geoDoc["label"] = label;
+        String geoStr;
+        serializeJson(geoDoc, geoStr);
+
+        settings.saveSetting<bool>("geo_" + String(i), geoStr);
+        anyChange = true;
+      }
+    }
+
+    // Device mode
+    if (server.hasArg("device_mode") && server.arg("device_mode") != "") {
+      int mode_arg = SOLO_MODE;
+      if (server.arg("device_mode") == "core") mode_arg = CORE_MODE;
+      else if (server.arg("device_mode") == "node") mode_arg = NODE_MODE;
+      this->run_mode = mode_arg;
+      settings.saveSetting<bool>("m", this->run_mode, true);
+      anyChange = true;
+    }
+
+    // Encryption
+    if (server.hasArg("enow_key") && server.arg("enow_key") != "") {
+      this->esp_now_key = server.arg("enow_key");
+      settings.saveSetting<bool>("ek", this->esp_now_key);
+      anyChange = true;
+    }
+    if (server.hasArg("use_encryption")) {
+      this->use_encryption = (server.arg("use_encryption") == "true");
+      settings.saveSetting<bool>("e", this->use_encryption);
+      anyChange = true;
+    }
+
+    if (anyChange)
+      Logger::log(GUD_MSG, "Settings saved successfully");
+    else
+      Logger::log(WARN_MSG, "Save called but no changes detected");
+
+    // Chunk 5: invalidate geofence cache so changes take effect immediately
+    this->reloadGeofenceCache();
+
+    server.send(200, "text/html",
+      "<html><body><h3>Settings saved.</h3>"
+      "<a href=\"/\">Back</a></body></html>");
+
+    this->last_web_client_activity = 0;
+    this->shutdownAccessPoint();
   });
 
   server.on("/download", HTTP_GET, [this]() {
+    if (!this->checkAuth()) return;
     this->last_web_client_activity = millis();
     if (!server.hasArg("file")) {
       server.send(400, "text/plain", "Missing file parameter.");
@@ -1884,110 +2571,54 @@ void WiFiOps::serveConfigPage() {
     downloadFile.close();
   });
 
+  // ---- GET /upload : per-service upload with sidecar tracking ----
   server.on("/upload", HTTP_GET, [this]() {
+    if (!this->checkAuth()) return;
+    this->last_web_client_activity = millis();
+
     if (!server.hasArg("file")) {
       server.send(400, "text/plain", "Missing file parameter.");
-      this->last_web_client_activity = millis();
       return;
     }
 
     String filePath = "/" + server.arg("file");
     if (!SD.exists(filePath)) {
-      server.send(404, "text/plain", "File not found.");
-      this->last_web_client_activity = millis();
+      server.send(404, "text/plain", "File not found: " + filePath);
       return;
     }
 
-    File fileToUpload = SD.open(filePath);
-    if (!fileToUpload) {
-      server.send(500, "text/plain", "Failed to open file.");
-      this->last_web_client_activity = millis();
-      return;
-    }
+    // ?svc=wigle|wdg|both  ?retry=1
+    String svc   = server.hasArg("svc")   ? server.arg("svc")   : "both";
+    bool   retry = server.hasArg("retry") && server.arg("retry") == "1";
 
-    // Load credentials
-    File configFile = SPIFFS.open(WIFI_CONFIG, "r");
-    DynamicJsonDocument doc(512);
-    deserializeJson(doc, configFile);
-    configFile.close();
+    bool wigle_ok = true;
+    bool wdg_ok   = true;
 
-    String username = doc["wu"] | "";
-    String token = doc["wt"] | "";
-    if (username.isEmpty() || token.isEmpty()) {
-      fileToUpload.close();
-      server.send(500, "text/plain", "Missing WiGLE credentials.");
-      this->last_web_client_activity = millis();
-      return;
-    }
-
-    String boundary = "----ESP32BOUNDARY";
-    String contentType = "multipart/form-data; boundary=" + boundary;
-
-    // Build parts
-    String part1 = "--" + boundary + "\r\n";
-    part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filePath + "\"\r\n";
-    part1 += "Content-Type: application/octet-stream\r\n\r\n";
-
-    String part2 = "\r\n--" + boundary + "\r\n";
-    part2 += "Content-Disposition: form-data; name=\"donate\"\r\n\r\non\r\n";
-
-    String part3 = "--" + boundary + "--\r\n";
-
-    int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
-
-    // Connect manually via WiFiClientSecure
-    //WiFiClientSecure *client = new WiFiClientSecure();
-    client->setInsecure();
-
-    if (!client->connect("api.wigle.net", 443)) {
-      fileToUpload.close();
-      client->stop();
-      //delete client;
-      server.send(500, "text/plain", "Failed to connect to wigle.net.");
-      this->last_web_client_activity = millis();
-      return;
-    }
-
-    // Compose headers
-    String auth = utils.base64Encode(username + ":" + token);
-    client->println("POST /api/v2/file/upload HTTP/1.1");
-    client->println("Host: api.wigle.net");
-    client->println("User-Agent: ESP32Uploader/1.0");
-    client->println("Accept: application/json");
-    client->println("Authorization: Basic " + auth);
-    client->println("Content-Type: " + contentType);
-    client->print("Content-Length: ");
-    client->println(totalLength);
-    client->println();
-
-    // Send body
-    client->print(part1);
-    const size_t BUFFER_SIZE = 4096; // 1KB at a time
-    uint8_t buffer[BUFFER_SIZE];
-
-    while (fileToUpload.available()) {
-      size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
-      client->write(buffer, bytesRead);
-    }
-    client->print(part2);
-    client->print(part3);
-
-    fileToUpload.close();
-
-    // Read response
-    String response;
-    unsigned long timeout = millis();
-    while (client->connected() && millis() - timeout < 5000) {
-      while (client->available()) {
-        response += client->readStringUntil('\n');
+    if (svc == "wigle") {
+      bool already = !retry && this->sidecarExists(filePath, "wigle");
+      if (!already) {
+        wigle_ok = this->backendUpload(filePath);
+        if (wigle_ok) this->writeSidecar(filePath, "wigle");
       }
+    } else if (svc == "wdg") {
+      bool already = !retry && this->sidecarExists(filePath, "wdg");
+      if (!already) {
+        wdg_ok = this->wdgwarsUpload(filePath);
+        if (wdg_ok) this->writeSidecar(filePath, "wdg");
+      }
+    } else {
+      // both
+      bool ok = this->uploadFile(filePath, retry);
+      wigle_ok = ok;
+      wdg_ok   = ok;
     }
-    client->stop();
-    //delete client;
 
-    Serial.println("WiGLE response:");
-    Serial.println(response);
-    server.send(200, "text/plain", "Upload complete. Response:\n" + response);
+    String result = "<html><body><h3>Upload result for " + filePath + "</h3>";
+    result += "WiGLE: " + String(wigle_ok ? "&#10003; OK" : "&#10007; Failed") + "<br>";
+    result += "WDG Wars: " + String(wdg_ok  ? "&#10003; OK" : "&#10007; Failed") + "<br><br>";
+    result += "<a href=\"/\">Back</a></body></html>";
+
+    server.send(200, "text/html", result);
     this->last_web_client_activity = millis();
   });
 
@@ -2153,10 +2784,262 @@ bool WiFiOps::begin(bool skip_admin) {
 
   this->init_time = millis();
 
+  // Chunk 5: load geofence cache now that settings are fully initialised
+  this->loadGeofenceCache();
+
   return true;
 }
 
+// ============================================================
+// Chunk 6: Dock mode state machine
+// ============================================================
+
+// Synchronous passive scan for the configured trigger SSID.
+// Safe to call while in promiscuous mode (cancels ongoing async scan first).
+// Returns true if the trigger SSID is visible.
+bool WiFiOps::scanForTriggerSSID() {
+  String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+  if (trigSSID.isEmpty()) return false;
+
+  // Don't interrupt a running async scan — skip this cycle
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
+  WiFi.scanDelete();
+
+  int n = WiFi.scanNetworks(false, true); // synchronous, include hidden
+  bool found = false;
+  for (int i = 0; i < n; i++) {
+    if (WiFi.SSID(i) == trigSSID) { found = true; break; }
+  }
+  WiFi.scanDelete();
+  return found;
+}
+
+// Dispatcher — called from main() when dock_state != DOCK_STATE_NONE.
+void WiFiOps::runDockMode(uint32_t currentTime) {
+  switch (this->dock_state) {
+    case DOCK_STATE_CONNECTING:
+      this->handleDockConnecting();
+      break;
+    case DOCK_STATE_UPLOADING:
+      this->handleDockUploading();
+      break;
+    case DOCK_STATE_MONITORING:
+      this->handleDockMonitoring(currentTime);
+      break;
+    case DOCK_STATE_FAILED:
+      // Wait for failure display timeout then resume wardriving
+      if (currentTime - this->dock_fail_time >= DOCK_FAIL_DISPLAY_MS) {
+        Logger::log(STD_MSG, "[DOCK] Failure display expired — resuming wardrive");
+        this->dock_state            = DOCK_STATE_NONE;
+        this->dock_connect_attempts = 0;
+        this->initWiFi();
+        this->initBLE();
+        display.clearScreen();
+      }
+      break;
+    default:
+      this->dock_state = DOCK_STATE_NONE;
+      break;
+  }
+}
+
+// One blocking connection attempt to the trigger SSID.
+// Retries up to DOCK_CONNECT_ATTEMPTS times across successive main() cycles.
+void WiFiOps::handleDockConnecting() {
+  String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+  String trigPass = settings.loadSetting<String>(TRIGGER_PASS_NAME);
+
+  Logger::log(STD_MSG, "[DOCK] Connect attempt " +
+              String(this->dock_connect_attempts + 1) + "/" +
+              String(DOCK_CONNECT_ATTEMPTS) + " to: " + trigSSID);
+
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+  display.tft->setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  display.tft->println("DOCK MODE");
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->println("Connecting...");
+  display.tft->println(trigSSID);
+  display.tft->println("Attempt " +
+                       String(this->dock_connect_attempts + 1) + "/3");
+
+  // Switch WiFi from scan/promiscuous to STA client
+  this->deinitBLE();
+  this->deinitWiFi();
+  this->initWiFi();
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(trigSSID.c_str(), trigPass.c_str());
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - start < DOCK_CONNECT_TIMEOUT) {
+    delay(500);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    this->dock_ip = WiFi.localIP().toString();
+    Logger::log(GUD_MSG, "[DOCK] Connected! IP: " + this->dock_ip);
+
+    // Show dock banner on TFT
+    display.clearScreen();
+    display.tft->setCursor(0, 0);
+    display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    display.tft->println("DOCKED");
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->println(trigSSID);
+    display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    display.tft->println(this->dock_ip);
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->println("browse to config");
+
+    // Start web server so you can access config/files while docked
+    this->serveConfigPage();
+    this->serving = true;
+    this->last_web_client_activity = millis();
+
+    this->dock_state = DOCK_STATE_UPLOADING;
+
+  } else {
+    WiFi.disconnect(true);
+    this->dock_connect_attempts++;
+    Logger::log(WARN_MSG, "[DOCK] Attempt " +
+                String(this->dock_connect_attempts) + " failed");
+
+    if (this->dock_connect_attempts >= DOCK_CONNECT_ATTEMPTS) {
+      Logger::log(WARN_MSG, "[DOCK] All attempts exhausted — resuming wardrive in " +
+                  String(DOCK_FAIL_DISPLAY_MS / 1000) + "s");
+
+      display.clearScreen();
+      display.tft->setCursor(0, 0);
+      display.tft->setTextColor(ST77XX_RED, ST77XX_BLACK);
+      display.tft->println("DOCK FAILED");
+      display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+      display.tft->println(trigSSID);
+      display.tft->println("Resuming in");
+      display.tft->println(String(DOCK_FAIL_DISPLAY_MS / 1000) + "s");
+
+      this->dock_state    = DOCK_STATE_FAILED;
+      this->dock_fail_time = millis();
+    }
+    // else: stay in DOCK_STATE_CONNECTING — next main() cycle retries
+  }
+}
+
+// Run once after successful connection: upload all pending files
+// then transition to monitoring.
+void WiFiOps::handleDockUploading() {
+  Logger::log(STD_MSG, "[DOCK] Starting bulk upload of pending files");
+
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+  display.tft->setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  display.tft->println("UPLOADING");
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->println(this->dock_ip);
+
+  this->uploadAllPending(); // Chunk 3
+
+  Logger::log(GUD_MSG, "[DOCK] Upload complete — monitoring for departure");
+
+  String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+  display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  display.tft->println("SYNCED");
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->println(this->dock_ip);
+  display.tft->println("Watching for");
+  display.tft->println("departure...");
+
+  this->dock_last_scan_time = millis();
+  this->dock_depart_count   = 0;
+  this->dock_state          = DOCK_STATE_MONITORING;
+}
+
+// Called every main() cycle while docked.
+// Services web server and runs passive scan every DOCK_SCAN_INTERVAL.
+// Departs when trigger SSID is absent for DOCK_DEPART_SCANS consecutive scans.
+void WiFiOps::handleDockMonitoring(uint32_t currentTime) {
+  // Service any web browser clients
+  server.handleClient();
+
+  if (currentTime - this->dock_last_scan_time < DOCK_SCAN_INTERVAL)
+    return; // not time yet
+
+  this->dock_last_scan_time = currentTime;
+  Logger::log(STD_MSG, "[DOCK] Passive scan — checking for trigger SSID");
+
+  bool found = this->scanForTriggerSSID();
+
+  if (found) {
+    Logger::log(STD_MSG, "[DOCK] Trigger SSID still visible — staying docked");
+    this->dock_depart_count = 0;
+
+    display.clearScreen();
+    display.tft->setCursor(0, 0);
+    display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    display.tft->println("DOCKED");
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->println(this->dock_ip);
+    display.tft->println("Monitoring...");
+
+  } else {
+    this->dock_depart_count++;
+    Logger::log(STD_MSG, "[DOCK] Trigger SSID absent (" +
+                String(this->dock_depart_count) + "/" +
+                String(DOCK_DEPART_SCANS) + ")");
+
+    if (this->dock_depart_count >= DOCK_DEPART_SCANS)
+      this->departDock();
+  }
+}
+
+// Clean teardown: stop web server, disconnect WiFi,
+// reinitialise for wardriving, start a fresh log file.
+void WiFiOps::departDock() {
+  Logger::log(STD_MSG, "[DOCK] Departing — tearing down dock mode");
+
+  // Stop web server (keep STA mode, AP was never started)
+  this->shutdownAccessPoint(false);
+
+  // Disconnect from trigger SSID
+  WiFi.disconnect(true);
+  delay(100);
+
+  // Reinitialise WiFi and BLE for wardriving
+  this->deinitWiFi();
+  this->initWiFi();
+  this->initBLE();
+
+  // Fresh log file so post-dock drive gets its own file
+  this->startLog(LOG_FILE_NAME);
+
+  // Reset all dock state
+  this->dock_state            = DOCK_STATE_NONE;
+  this->dock_connect_attempts = 0;
+  this->dock_depart_count     = 0;
+  this->dock_ip               = "";
+
+  Logger::log(GUD_MSG, "[DOCK] Departed — wardriving resumed");
+
+  display.clearScreen();
+  display.tft->setCursor(0, 0);
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->println("WARDRIVE");
+  display.tft->println("RESUMED");
+}
+
+// ============================================================
+
 void WiFiOps::main(uint32_t currentTime) {
+  // Chunk 6: dock mode takes priority over normal wardrive cycle
+  if (this->dock_state != DOCK_STATE_NONE) {
+    this->runDockMode(currentTime);
+    return;
+  }
+
   if (this->current_scan_mode == WIFI_WARDRIVING)
     this->runWardrive(currentTime);
 
