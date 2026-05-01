@@ -139,4 +139,38 @@
 #define mac_history_len 200
 #define CHANNEL_TIMER 80
 
+
+// ============================================================
+// Chunk 1: Extended feature constants
+// ============================================================
+
+//// Geofence stuff
+#define MAX_GEOFENCES         5
+
+//// SSID Exclusion stuff
+#define MAX_SSID_EXCLUSIONS   10
+
+//// Dock mode stuff
+#define DOCK_CONNECT_ATTEMPTS  3
+#define DOCK_CONNECT_TIMEOUT   10 * 1000   // 10 seconds per attempt
+#define DOCK_SCAN_INTERVAL     30 * 1000   // passive scan every 30s while docked
+#define DOCK_DEPART_SCANS      2           // consecutive misses before resuming wardrive
+#define DOCK_FAIL_DISPLAY_MS   20 * 1000   // show K1T failure message for 20s
+
+//// Power-off stuff
+#define POWEROFF_DEFAULT_MINS  5
+#define USB_DEBOUNCE_READS     3           // consecutive reads before acting on USB state change
+
+//// Settings JSON buffer — bumped from 2048 to handle 30 settings entries
+#define SETTINGS_JSON_SIZE     4096
+
+// ============================================================
+// Chunk 6: Dock mode state constants
+// ============================================================
+#define DOCK_STATE_NONE       0  // wardriving normally
+#define DOCK_STATE_CONNECTING 1  // attempting WiFi connect to trigger SSID
+#define DOCK_STATE_UPLOADING  2  // uploading all pending log files
+#define DOCK_STATE_MONITORING 3  // watching for trigger SSID departure
+#define DOCK_STATE_FAILED     4  // connect failed, showing message before resume
+
 #endif
