@@ -528,6 +528,12 @@ bool Settings::createDefaultSettings(fs::FS &fs, bool spec, uint8_t index, Strin
     jsonBuffer["Settings"][8]["range"]["min"] = "";
     jsonBuffer["Settings"][8]["range"]["max"] = "";
 
+    jsonBuffer["Settings"][8]["name"] = "wdg";
+    jsonBuffer["Settings"][8]["type"] = "String";
+    jsonBuffer["Settings"][8]["value"] = "";
+    jsonBuffer["Settings"][8]["range"]["min"] = "";
+    jsonBuffer["Settings"][8]["range"]["max"] = "";
+
     if (serializeJson(jsonBuffer, settingsFile) == 0) {
       Logger::log(WARN_MSG, "Failed to write to file");
     }

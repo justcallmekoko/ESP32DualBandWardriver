@@ -32,6 +32,11 @@ extern Display display;
 
 extern WebServer server;
 
+// Upload types
+#define WIGLE_UPLOAD 0
+#define WDG_UPLOAD   1
+#define BOTH_UPLOAD  2
+
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
@@ -105,6 +110,7 @@ class WiFiOps
     String user_ap_password = "";
     String wigle_user = "";
     String wigle_token = "";
+    String wdg_token = "";
 
     bool connected_as_client = false;
 
@@ -171,7 +177,9 @@ class WiFiOps
     void deinitBLE();
     void deinitWiFi();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
-    bool backendUpload(String filePath);
+    bool uploadToWDG(String filePath, File fileToUpload);
+    bool uploadToWigle(String filePath, File fileToUpload);
+    bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
     void setTotalNetCount(uint32_t count);

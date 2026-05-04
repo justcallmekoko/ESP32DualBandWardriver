@@ -4,32 +4,24 @@ void UI::begin() {
   sd_file_menu.list = new LinkedList<MenuNode>();
   action_menu.list = new LinkedList<MenuNode>();
   mode_menu.list = new LinkedList<MenuNode>();
+  upload_menu.list = new LinkedList<MenuNode>();
 
   mode_menu.name = "Mode";
   action_menu.name = "Action";
+  upload_menu.name = "Upload";
 
   this->buildSDFileMenu();
 
   action_menu.parentMenu = &sd_file_menu;
+  upload_menu.parentMenu = &action_menu;
   mode_menu.parentMenu = &sd_file_menu;
 
+  // Action Menu
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->current_menu = action_menu.parentMenu;
   });
   this->addNodes(&action_menu, "Upload", ST77XX_WHITE, NULL, 0, [this]() {
-    if (wifi_ops.tryConnectToWiFi()) {
-      delay(1000);
-      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name)) {
-        display.clearScreen();
-        display.drawCenteredText("Upload complete", true);
-        buffer.setFileName("");
-      }
-    }
-    
-    wifi_ops.deinitWiFi();
-    delay(10);
-    wifi_ops.initWiFi();
-    delay(2000);
+    this->current_menu = &upload_menu;
   });
   this->addNodes(&action_menu, "Delete", ST77XX_WHITE, NULL, 0, [this]() {
     if ("/" + sd_obj.selected_file_name == buffer.getFileName())
@@ -56,6 +48,57 @@ void UI::begin() {
 
     this->current_menu = &sd_file_menu;
   });
+
+  // Upload Menu
+  this->addNodes(&upload_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = upload_menu.parentMenu;
+  });
+  this->addNodes(&upload_menu, "WiGLE", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, WIGLE_UPLOAD)) {
+        display.clearScreen();
+        display.drawCenteredText("Upload complete", true);
+        buffer.setFileName("");
+      }
+    }
+    
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+  });
+  this->addNodes(&upload_menu, "WDGWars", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, WDG_UPLOAD)) {
+        display.clearScreen();
+        display.drawCenteredText("Upload complete", true);
+        buffer.setFileName("");
+      }
+    }
+    
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+  });
+  this->addNodes(&upload_menu, "Both", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, BOTH_UPLOAD)) {
+        display.clearScreen();
+        display.drawCenteredText("Upload complete", true);
+        buffer.setFileName("");
+      }
+    }
+    
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+  });
+
 
   // Mode Menu
   this->addNodes(&mode_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {

@@ -55,6 +55,7 @@ class UI {
     Menu sd_file_menu;
     Menu mode_menu;
     Menu action_menu;
+    Menu upload_menu;
 
     uint32_t init_time;
     uint32_t lastUpdateTime = 0;
