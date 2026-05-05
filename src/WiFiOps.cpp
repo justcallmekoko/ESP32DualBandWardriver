@@ -1886,6 +1886,7 @@ bool WiFiOps::backendUpload(String filePath, uint8_t upload_type) {
     if ((upload_type == WDG_UPLOAD) || (upload_type == BOTH_UPLOAD)) {
       wdg_status = this->uploadToWDG(filePath, fileToUpload);
       if (upload_type == BOTH_UPLOAD) {
+        fileToUpload = SD.open(filePath);
         display.clearScreen();
         if (wdg_status)
           display.drawCenteredText("WDG Upload Success", true);

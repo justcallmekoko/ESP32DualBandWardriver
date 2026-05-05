@@ -138,7 +138,6 @@ class WiFiOps
     int touchNode(const uint8_t* mac, bool& isNewNode);
     uint8_t getNodeStartChannel(uint8_t slot);
     uint8_t getNodeEndChannel(uint8_t slot);
-    uint8_t getActiveNodeCount();
     void showCountdown();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
@@ -176,6 +175,7 @@ class WiFiOps
     void initWiFi(bool set_country = false);
     void deinitBLE();
     void deinitWiFi();
+    uint8_t getActiveNodeCount();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
     bool uploadToWDG(String filePath, File fileToUpload);
     bool uploadToWigle(String filePath, File fileToUpload);
