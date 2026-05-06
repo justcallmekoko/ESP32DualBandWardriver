@@ -233,10 +233,12 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
 
     display.tft->print("GPS Sats: ");
     display.tft->println(gpsSats > 0 ? String(gpsSats) : "No Fix");
-
-    display.tft->setTextSize(2);
+    if (wifi_ops.run_mode == CORE_MODE)
+      display.tft->println("Nodes: " + (String)wifi_ops.getActiveNodeCount());
 
     display.tft->println();
+
+    display.tft->setTextSize(2);
 
     display.tft->setTextColor(ST77XX_GREEN);
     //display.tft->print("Total Nets: ");
