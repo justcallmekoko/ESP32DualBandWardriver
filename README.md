@@ -13,6 +13,10 @@ Logs are formatted for Wigle and saved to SD card.
 - [Install Firmware](#install-firmware)
 - [Update Firmware](#update-firmware)
 - [Usage](#usage)
+    - [Booting](#booting)
+    - [Initial Setup](#initial-setup)
+    - [Webserver Usage](#webserver-usage)
+    - [Uploads](#uploads)
 - [Modes](#modes)
 
 ## Leaderboards
@@ -96,7 +100,7 @@ The firmware update process is very simple once the initial install process is c
 When the C5 Wardriver is powered on, it will attempt to connect to WiFi using the user-provided WiFi credentials. If there were not credentials provided or the provided WLAN is not available, the C5 Wardriver will then start its own access point with the name `c5wardriver` and the password `c5wardriver`. The access point will remain active for 60 seconds if no client connections are made. The access point will otherwise remain active until a client disconnected. If the C5 Wardriver is able to connect to WiFi, it will remain connected until 60 seconds of inactivity on it's web server has passed. Once the web server or access point inactivity threshold has been reached, the C5 Wardriver will start normal wardriving operation. You can skip the admin phase of the boot process and go straight to wardriving if you hold the `SELECT` button as soon as the JCMK logo appears on the display.
 
 ### Initial Setup
-The first time you boot the C5 Wardriver, it will start its own access point named `c5wardriver`. You can connect to this access point using password `c5wardriver`. The access point will remain active for 60 seconds or until all connected clients disconnect. Once connected, you can navigate to `http://192.168.4.1` on your connected device where you will be presented with a web page. Here you can enter WiFi credentials which the C5 Wardriver will use to connect to a WLAN at every boot as well as your [Wigle API credentials](https://wigle.net/account). You can also find the full contents of your SD card root available for download, including your wardriving logs. Once WiFi credentials are saved, the access point and webserver shutdown and normal wardriving operation starts.
+The first time you boot the C5 Wardriver, it will start its own access point named `c5wardriver`. You can connect to this access point using password `c5wardriver`. The access point will remain active for 60 seconds or until all connected clients disconnect. Once connected, you can navigate to `http://192.168.4.1` on your connected device where you will be presented with a web page. Here you can enter WiFi credentials which the C5 Wardriver will use to connect to a WLAN at every boot as well as your [Wigle API credentials](https://wigle.net/account) and your [WDGWars](https://wdgwars.pl) credentials. You can also find the full contents of your SD card root available for download, including your wardriving logs. Once WiFi credentials are saved, the access point and webserver shutdown and normal wardriving operation starts. Afte ypir WiGLE and WDGWars API credentials are provided, you will be able to upload your wardriving logs directly to those platforms.
 
 ### Webserver Usage
 At every boot, if the C5 Wardriver is able to connect to a WLAN using the user-provided WiFi credentials from the initial boot, it will present a webpage. The local IP of the C5 Wardriver will be displayed on the screen. The IP address may then be used by a device connected to the same WLAN to access the admin page of the C5 Wardriver. Here you will find the same web page as what you would see during the initial setup, the WLAN and Wigle credential fields, and SD card root contents. Here you can reconfigure your WLAN settings, download the contents of your SD card, and upload your wardriving logs directly to Wigle. Like the initial setup phase, there is a 60 second inactivity timeout. This means if you do not perform any actions on the web page for 60 seconds, the webserver will shutdown and normal wardriving operation will start. If the WLAN connection fails, the C5 Wardriver will start its own access point as described in [Initial Setup](#initial-setup).
@@ -104,6 +108,9 @@ At every boot, if the C5 Wardriver is able to connect to a WLAN using the user-p
 ### Buttons
 During normal wardriving operation, the `UP` and `DOWN` buttons may be used to switch between display modes for different presentation of the wardriving status and statistic information.  
 The initial WiFi admin sequence at boot can be skipped by holding the `SELECT` button as soon as the boot logo appears.
+
+### Uploads
+The C5 Wardriver firmware supports direct upload to [WiGLE](https://wigle.net) and [WDGWars](https://wdgwars.pl) over WiFi. You must provide your API credentials for either/both platforms in order for the upload feature to function. This is done using the [Webserver](#webserver-usage).
 
 ## Modes
 The C5 Wardriver is capable of using multiple ESP32 modules as separate collection nodes with a single "Core" ESP32 to consolidate the collection data and save it to an SD card. The following section describes the process for selecting specific modes as well as the purpose for each mode. For [Nodes](#node-mode) and [Cores](#core-mode) to communicate, they do not require a physical connection to each other as their communication is conduction over-the-air. They are required to be within typical WiFi range of each other. **When configuring the device mode from the Admin web interface, the device will boot into that mode from that point on. If selecting the mode from the menu directly on the device, the mode is temporary and will reset upon next boot.**
