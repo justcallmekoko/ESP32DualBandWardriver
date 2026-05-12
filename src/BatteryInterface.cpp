@@ -1,7 +1,6 @@
 #include "BatteryInterface.h"
 
 BatteryInterface::BatteryInterface() {
-  
 }
 
 void BatteryInterface::main(uint32_t currentTime) {
@@ -9,6 +8,7 @@ void BatteryInterface::main(uint32_t currentTime) {
     if (currentTime - initTime >= 3000) {
       this->initTime = millis();
 
+      // Battery level update
       int8_t new_level = this->getBatteryLevel();
       if (this->battery_level != new_level) {
         Logger::log(STD_MSG, "Battery Level changed: " + (String)new_level);
@@ -16,39 +16,52 @@ void BatteryInterface::main(uint32_t currentTime) {
         Logger::log(STD_MSG, "Battery Level: " + (String)this->battery_level);
       }
     }
+
+    // Chunk 2: sample chargeRate on its own slower interval
+    if (this->has_max17048 &&
+        currentTime - this->last_rate_sample >= CHARGE_RATE_SAMPLE_MS) {
+      this->last_rate_sample = currentTime;
+
+      float rate = this->maxlipo.chargeRate();
+      Logger::log(STD_MSG, "[CHG] chargeRate: " + String(rate, 2) +
+                  " %/hr | state: " +
+                  (this->charging_state ? "POWER" : "BATTERY"));
+
+      if (rate < CHARGE_RATE_THRESHOLD) {
+        // Rate is negative enough to suggest battery-only
+        this->low_rate_count++;
+        Logger::log(STD_MSG, "[CHG] Low rate count: " +
+                    String(this->low_rate_count) + "/" +
+                    String(CHARGE_RATE_CONFIRM));
+
+        if (this->low_rate_count >= CHARGE_RATE_CONFIRM &&
+            this->charging_state) {
+          this->charging_state = false;
+          Logger::log(WARN_MSG, "[CHG] Power removed — switching to BATTERY");
+        }
+      } else {
+        // Rate is non-negative — power is present
+        if (this->low_rate_count > 0) {
+          Logger::log(STD_MSG, "[CHG] Rate recovered — resetting low count");
+          this->low_rate_count = 0;
+        }
+        if (!this->charging_state) {
+          this->charging_state = true;
+          Logger::log(GUD_MSG, "[CHG] Power restored — switching to POWER");
+        }
+      }
+    }
   }
 }
 
 // ============================================================
-// Chunk 2: USB presence detection via GPIO25 ADC
-//
-// The XB8608 CHG signal is attenuated through the board's LED
-// circuit and appears on GPIO25 at:
-//   ~0V    (ADC ~0)    — battery only, no USB
-//   ~0.85V (ADC ~1055) — USB power present
-//
-// A threshold of 500 counts (~0.4V) sits cleanly between both
-// states with comfortable margin on either side.
-//
-// Averages CHG_ADC_SAMPLES reads with a 2ms gap between each
-// to filter ADC noise.
+// Chunk 2: Public accessor — returns debounced power state.
+// true  = power present (charging or charge-complete)
+// false = battery only
 // ============================================================
-
 bool BatteryInterface::isCharging() {
-  int total = 0;
-  for (int i = 0; i < CHG_ADC_SAMPLES; i++) {
-    total += analogRead(CHG_PIN);
-    delay(2);
-  }
-  int avg = total / CHG_ADC_SAMPLES;
-
-  Logger::log(STD_MSG, "[CHG] ADC avg: " + String(avg) +
-              (avg > CHG_ADC_THRESHOLD ? " -> USB" : " -> BATTERY"));
-
-  return (avg > CHG_ADC_THRESHOLD);
+  return this->charging_state;
 }
-
-// ============================================================
 
 void BatteryInterface::RunSetup() {
   byte error;
@@ -64,7 +77,7 @@ void BatteryInterface::RunSetup() {
 
     if (error == 0) {
       Logger::log(GUD_MSG, "Detected IP5306");
-      this->has_ip5306 = true;
+      this->has_ip5306    = true;
       this->i2c_supported = true;
     }
 
@@ -74,16 +87,20 @@ void BatteryInterface::RunSetup() {
     if (error == 0) {
       if (maxlipo.begin()) {
         Logger::log(GUD_MSG, "Detected MAX17048");
-        this->has_max17048 = true;
+        this->has_max17048  = true;
         this->i2c_supported = true;
       }
     }
 
-    this->initTime = millis();
+    this->initTime        = millis();
+    this->last_rate_sample = millis();
 
-    // Log initial USB state at boot
-    Logger::log(STD_MSG, "[CHG] Initial USB state: " +
-                String(this->isCharging() ? "USB" : "BATTERY"));
+    // Chunk 2: seed initial state — assume power present at boot.
+    // The first real sample fires after CHARGE_RATE_SAMPLE_MS (45s).
+    // Conservative default avoids a false power-off trigger at startup.
+    this->charging_state = true;
+    this->low_rate_count = 0;
+    Logger::log(STD_MSG, "[CHG] Initial state: POWER (assumed at boot)");
 
   #endif
 }
@@ -101,7 +118,7 @@ int8_t BatteryInterface::getBatteryLevel() {
         case 0xC0: return 50;
         case 0x80: return 75;
         case 0x00: return 100;
-        default: return 0;
+        default:   return 0;
       }
     }
     this->i2c_supported = false;
@@ -116,7 +133,7 @@ int8_t BatteryInterface::getBatteryLevel() {
     else if (percent <= 0)
       return 0;
     else
-      return percent;
+      return (int8_t)percent;
   }
 
   return 0;

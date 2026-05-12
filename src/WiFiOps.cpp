@@ -1815,8 +1815,7 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
     display.tft->print("IP: ");
     display.tft->println(WiFi.localIP());
     Logger::log(GUD_MSG, "WiFi connected!");
-    Logger::log(GUD_MSG, "IP address: ");
-    Serial.println(WiFi.localIP());
+    Logger::log(GUD_MSG, "IP address: " + WiFi.localIP().toString());
     return true;
   } else {
     Logger::log(WARN_MSG, "Failed to connect to WiFi.");
@@ -2631,7 +2630,7 @@ void WiFiOps::serveConfigPage() {
     // Build log output oldest-first from the ring buffer
     String logHtml = "<!DOCTYPE html><html><head>";
     logHtml += "<meta charset='utf-8'>";
-    logHtml += "<meta http-equiv='refresh' content='2'>";
+    logHtml += "<meta http-equiv='refresh' content='5'>";
     logHtml += "<title>C5 Wardriver Log</title>";
     logHtml += "<style>";
     logHtml += "body{background:#000;color:#0f0;font-family:monospace;font-size:12px;padding:8px;}";

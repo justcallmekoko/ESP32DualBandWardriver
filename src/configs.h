@@ -19,7 +19,6 @@
 24 TFT
 27 TFT
 28 ACT LED
-25 CHG DETECT (ADC)
 */
 
 #define JCMK_HOST_BOARD
@@ -109,16 +108,6 @@
 #define HAS_BATTERY
 #define I2C_SCL 4
 #define I2C_SDA 5
-
-
-//// CHG detection — XB8608 charge status via GPIO25 ADC
-// The XB8608 CHG signal is attenuated through the board's LED circuit.
-// GPIO25 reads ~0V (ADC ~0)    on battery only.
-// GPIO25 reads ~0.85V (ADC ~1055) with USB power present.
-// Threshold of 500 counts (~0.4V) sits cleanly between both states.
-#define CHG_PIN           25
-#define CHG_ADC_THRESHOLD 500
-#define CHG_ADC_SAMPLES   5
 
 
 //// GPS stuff

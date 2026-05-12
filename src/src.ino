@@ -90,7 +90,7 @@ void setup() {
   battery.battery_level = battery.getBatteryLevel();
 
   // Chunk 7: seed initial USB state from the battery IC
-  g_was_charging    = battery.isCharging();
+  g_was_charging = true; // assume power present at boot — chargeRate confirms after 45s
   g_poweroff_active = false;
 
   // Init GPS
