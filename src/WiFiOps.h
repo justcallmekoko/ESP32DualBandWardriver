@@ -45,6 +45,9 @@ struct GeofenceEntry {
   bool   valid = false;  // true when rad > 0 and lat/lon non-zero
 };
 
+#define WIGLE_UPLOAD 0
+#define WDG_UPLOAD   1
+#define BOTH_UPLOAD  2
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
@@ -204,6 +207,7 @@ class WiFiOps
     uint32_t last_timer;
     bool use_encryption = false;
     bool isDocked() { return dock_state != DOCK_STATE_NONE; }
+    uint8_t getNodeCount() { return getActiveNodeCount(); }
 
     uint8_t current_assignment_version = 1;
     uint8_t current_assigned_scan_idx = 0;
@@ -230,7 +234,7 @@ class WiFiOps
     void deinitBLE();
     void deinitWiFi();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
-    bool backendUpload(String filePath);
+    bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
 
 
     // --------------------------------------------------------

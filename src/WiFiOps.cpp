@@ -1850,7 +1850,7 @@ void WiFiOps::startAccessPoint() {
   display.tft->println(WiFi.softAPIP().toString());
 }
 
-bool WiFiOps::backendUpload(String filePath) {
+bool WiFiOps::backendUpload(String filePath, uint8_t upload_type) {
   //server.begin();
 
   display.clearScreen();
@@ -1997,12 +1997,22 @@ bool WiFiOps::backendUpload(String filePath) {
     if (!client->connected())
       Logger::log(WARN_MSG, "Client disconnected");
       
-    client->stop();
+  client->stop();
 
-    String respTrunc = response.length() > 200 ? response.substring(0, 200) : response;
-    Logger::log(STD_MSG, "[WIGLE] Response: " + respTrunc);
-    
-    return true;
+  String respTrunc = response.length() > 200 ? response.substring(0, 200) : response;
+  Logger::log(STD_MSG, "[WIGLE] Response: " + respTrunc);
+
+  bool wigle_ok = true;
+
+  if (upload_type == WDG_UPLOAD)
+    return this->wdgwarsUpload(filePath);
+
+  if (upload_type == BOTH_UPLOAD) {
+    bool wdg_ok = this->wdgwarsUpload(filePath);
+    return wigle_ok && wdg_ok;
+  }
+
+  return wigle_ok; // WIGLE_UPLOAD only
 }
 
 // ============================================================
