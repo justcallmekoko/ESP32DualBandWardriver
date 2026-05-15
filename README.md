@@ -1,13 +1,16 @@
 # ESP32 Dual Band Wardriver
 Based on the ESP32-C5-DevKitC-1 v1.2, the ESP32 Dual Band Wardriver offers wardriving capabilities for 2.4GHz and 5GHz WiFi as well as BLE.
-Logs are formatted for Wigle and saved to SD card.
+Logs are formatted for WiGLE and saved to SD card.
 
-## Table of Continents
+> **This is a fork of [justcallmekoko/ESP32DualBandWardriver](https://github.com/justcallmekoko/ESP32DualBandWardriver) built for the JCMK C5 Wardriver host board, with additional features including dock mode, geofence zones, SSID exclusion, and display improvements.**
+
+## Table of Contents
 - [Leaderboards](#leaderboards)
 - [Connections](#connections)
     - [Display](#display)
     - [GPS](#gps)
     - [SD Card](#sd-card)
+    - [Battery Fuel Gauge](#battery-fuel-gauge)
     - [Activity LED](#activity-led)
     - [User Buttons](#user-buttons)
 - [Install Firmware](#install-firmware)
@@ -16,53 +19,61 @@ Logs are formatted for Wigle and saved to SD card.
     - [Booting](#booting)
     - [Initial Setup](#initial-setup)
     - [Webserver Usage](#webserver-usage)
+    - [Display Screens](#display-screens)
+    - [Buttons](#buttons)
     - [Uploads](#uploads)
+    - [Dock Mode](#dock-mode)
+    - [Geofence Zones](#geofence-zones)
+    - [SSID Exclusions](#ssid-exclusions)
+    - [Debug Logging](#debug-logging)
 - [Modes](#modes)
 
 ## Leaderboards
-Join **#wardriving** on [Wigle](https://wigle.net/stats#groupstats) and **KokosStripClub (invite code: _mN01r0TAS8q)** on [WDGWars](https://wdgwars.pl) to have a little competitive fun with the art of wardriving.
+Join **#wardriving** on [WiGLE](https://wigle.net/stats#groupstats) and **KokosStripClub (invite code: _mN01r0TAS8q)** on [WDGWars](https://wdgwars.pl) to have a little competitive fun with the art of wardriving.
 
 ## Connections
-**IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you much remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly**
+**IMPORTANT: If you are using the ESP32-C5-DevKitC-1 with the JCMK C5 Wardriver host board or you are powering your DevKit via the 3V3 pin, you must remove the [3V3 jumper](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html#current-measurement) from the DevKit or your device will not power properly.**
 
 ### [Display](https://a.co/d/dO8M3Ec)
 | ESP32-C5 | Display |
-| -------- | -- |
-| `3V3`    | `VCC` |
-| `GND`    | `GND` |
-| `GPIO6`  | `SCK` |
-| `GPIO7`  | `MOSI` |
-| `GPIO23` | `CS` |
-| `GPIO24` | `DC` |
-| `GPIO27` | `BL` |
-| `RST`    | `RST` |
+| -------- | ------- |
+| `3V3`    | `VCC`   |
+| `GND`    | `GND`   |
+| `GPIO6`  | `SCK`   |
+| `GPIO7`  | `MOSI`  |
+| `GPIO23` | `CS`    |
+| `GPIO24` | `DC`    |
+| `GPIO27` | `BL`    |
+| `RST`    | `RST`   |
 
 ### [GPS](https://a.co/d/hIqIitg)
-| ESP32-C5 | GPS |
-| -------- | --- |
+| ESP32-C5 | GPS   |
+| -------- | ----- |
 | `3V3`    | `VCC` |
 | `GND`    | `GND` |
-| `GPIO13` | `RX` |
-| `GPIO14` | `TX` |
+| `GPIO13` | `RX`  |
+| `GPIO14` | `TX`  |
+
+> **Tip:** The GPS module's ceramic patch antenna should be oriented face-up toward the sky for best signal. In the JCMK host board case the antenna mounts vertically by default — relocating it to the top of the enclosure significantly improves acquisition time.
 
 ### [SD Card](https://www.sparkfun.com/sparkfun-microsd-transflash-breakout.html)
-| ESP32-C5 | SD |
-| -------- | -- |
-| `3V3`    | `VCC` |
-| `GND`    | `GND` |
-| `GPIO6`  | `SCK` |
+| ESP32-C5 | SD     |
+| -------- | ------ |
+| `3V3`    | `VCC`  |
+| `GND`    | `GND`  |
+| `GPIO6`  | `SCK`  |
 | `GPIO2`  | `MISO` |
 | `GPIO7`  | `MOSI` |
-| `GPIO10` | `CS` |
+| `GPIO10` | `CS`   |
 
-### [Battery Fuel Gauge](https://www.adafruit.com/product/5580?srsltid=AfmBOorF18oKQ_UTmewFqWVfryc6hovloBa6APF5GGIUm1mz5bNJcq-2)
-| Board | ESP32-C5 | Button |
-| ----- | -------- | --- |
-|       | `GPIO4` | `SCL` |
-|       | `GPIO5` | `SDA` |
-|       | `3V3` | `VCC` |
-|       | `GND` | `GND` |
-| `Battery +` | | `BAT` |
+### [Battery Fuel Gauge](https://www.adafruit.com/product/5580)
+| Board       | ESP32-C5 | Pin   |
+| ----------- | -------- | ----- |
+|             | `GPIO4`  | `SCL` |
+|             | `GPIO5`  | `SDA` |
+|             | `3V3`    | `VCC` |
+|             | `GND`    | `GND` |
+| `Battery +` |          | `BAT` |
 
 ### Activity LED
 | ESP32-C5 | LED |
@@ -71,11 +82,11 @@ Join **#wardriving** on [Wigle](https://wigle.net/stats#groupstats) and **KokosS
 | `GND`    | `-` |
 
 ### User Buttons
-The User Buttons require pull-down resistors
-| ESP32-C5 | Button |
-| -------- | --- |
-| `GPIO8` | `DOWN` |
-| `GPIO9` | `UP` |
+The User Buttons require pull-down resistors.
+| ESP32-C5 | Button   |
+| -------- | -------- |
+| `GPIO8`  | `DOWN`   |
+| `GPIO9`  | `UP`     |
 | `GPIO15` | `SELECT` |
 
 ## Install Firmware
@@ -86,46 +97,106 @@ The User Buttons require pull-down resistors
 5. Once you see `Ready to flash these files to ESP32-C5? (y/N):`, enter `y` and allow the firmware to flash
 6. When the `Hardware reset` message appears on the screen, you may disconnect your ESP32-C5 device
 
-## Update Firmware
-The firmware update process is very simple once the initial install process is completed. The firmware is designed to check the attached SD card at every boot for a new bin file. If a new bin file is found, it uses it to automcatically execute an update. If an old bin file is found or no bin file is found, it resumes normal operation. 
+> **Note:** The ESP32-C5 DevKit must be removed from the JCMK host board before flashing. The host board's circuitry prevents the DevKit from enumerating over USB while seated.
 
-1. Download latest firmware from releases
-2. Place the .bin file on the root of your SD card
-3. Install your SD card into the C5 wardriver
-4. Boot the C5 wardriver and allow the automatic update process to execute
+## Update Firmware
+The firmware is designed to check the SD card root at every boot for a new `.bin` file. If a new bin file is found, it automatically executes an update.
+
+1. Download the latest firmware from [Releases](../../releases)
+2. Place the `.bin` file on the root of your SD card
+3. Install the SD card into the C5 Wardriver
+4. Boot the C5 Wardriver and allow the automatic update process to execute
 
 ## Usage
 
 ### Booting
-When the C5 Wardriver is powered on, it will attempt to connect to WiFi using the user-provided WiFi credentials. If there were not credentials provided or the provided WLAN is not available, the C5 Wardriver will then start its own access point with the name `c5wardriver` and the password `c5wardriver`. The access point will remain active for 60 seconds if no client connections are made. The access point will otherwise remain active until a client disconnected. If the C5 Wardriver is able to connect to WiFi, it will remain connected until 60 seconds of inactivity on it's web server has passed. Once the web server or access point inactivity threshold has been reached, the C5 Wardriver will start normal wardriving operation. You can skip the admin phase of the boot process and go straight to wardriving if you hold the `SELECT` button as soon as the JCMK logo appears on the display.
+When powered on, the C5 Wardriver attempts to connect to WiFi using saved credentials. If no credentials are saved or the network is unavailable, it starts its own access point named `c5wardriver` (password: `c5wardriver`). The AP remains active for 60 seconds if no clients connect, or until all clients disconnect.
+
+If the device connects to a saved WiFi network, the web UI remains available indefinitely — it will stay connected until the network disappears. You can skip the admin phase entirely by holding `SELECT` when the boot logo appears.
 
 ### Initial Setup
-The first time you boot the C5 Wardriver, it will start its own access point named `c5wardriver`. You can connect to this access point using password `c5wardriver`. The access point will remain active for 60 seconds or until all connected clients disconnect. Once connected, you can navigate to `http://192.168.4.1` on your connected device where you will be presented with a web page. Here you can enter WiFi credentials which the C5 Wardriver will use to connect to a WLAN at every boot as well as your [Wigle API credentials](https://wigle.net/account) and your [WDGWars](https://wdgwars.pl) credentials. You can also find the full contents of your SD card root available for download, including your wardriving logs. Once WiFi credentials are saved, the access point and webserver shutdown and normal wardriving operation starts. Afte ypir WiGLE and WDGWars API credentials are provided, you will be able to upload your wardriving logs directly to those platforms.
+On first boot, connect to the `c5wardriver` access point and navigate to `http://192.168.4.1`. From the web UI you can configure:
+
+- **WiFi SSID / Password** — network to connect at boot for web UI access
+- **WiGLE API credentials** — for direct log upload to WiGLE
+- **WDG Wars API key** — for direct log upload to WDGWars
+- **Trigger SSID / Password** — network that triggers dock mode (see [Dock Mode](#dock-mode))
+- **Admin Password** — enables Basic Auth on the web UI
+- **SSID Exclusions** — SSIDs to never log
+- **Geofence Zones** — zones where wardriving pauses
+- **SD Debug Log** — enable to write all log entries to `/debug.log` on the SD card
 
 ### Webserver Usage
-At every boot, if the C5 Wardriver is able to connect to a WLAN using the user-provided WiFi credentials from the initial boot, it will present a webpage. The local IP of the C5 Wardriver will be displayed on the screen. The IP address may then be used by a device connected to the same WLAN to access the admin page of the C5 Wardriver. Here you will find the same web page as what you would see during the initial setup, the WLAN and Wigle credential fields, and SD card root contents. Here you can reconfigure your WLAN settings, download the contents of your SD card, and upload your wardriving logs directly to Wigle. Like the initial setup phase, there is a 60 second inactivity timeout. This means if you do not perform any actions on the web page for 60 seconds, the webserver will shutdown and normal wardriving operation will start. If the WLAN connection fails, the C5 Wardriver will start its own access point as described in [Initial Setup](#initial-setup).
+At every boot, if connected to a saved WiFi network, the device IP is shown on the display. Navigate to that IP from any device on the same network to access the web UI. From here you can download log files, upload to WiGLE or WDGWars, and reconfigure all settings.
+
+A live log viewer is available at `http://<device-ip>/log` — auto-refreshes every 5 seconds and shows the last 100 log entries.
+
+### Display Screens
+Cycle between screens using the `UP` and `DOWN` buttons.
+
+**Screen 1 — Stats (default)**
+Large-format wardriving stats: GPS satellite count and lock status, battery percentage, scan status, current session 2.4GHz / 5GHz / BLE counts, running totals, and active geofence zone name.
+
+**Screen 2 — Detail**
+Original stats display: firmware version, SD status, battery, scan status, log file name, per-band counts, GPS satellites, and running totals.
+
+**Screen 3 — Incognito**
+5-second countdown then backlight off. Press any button to exit.
 
 ### Buttons
-During normal wardriving operation, the `UP` and `DOWN` buttons may be used to switch between display modes for different presentation of the wardriving status and statistic information.  
-The initial WiFi admin sequence at boot can be skipped by holding the `SELECT` button as soon as the boot logo appears.
+| Button   | Function |
+| -------- | -------- |
+| `UP`     | Cycle display mode forward |
+| `DOWN`   | Cycle display mode backward |
+| `SELECT` | Hold at boot logo to skip admin phase |
 
 ### Uploads
-The C5 Wardriver firmware supports direct upload to [WiGLE](https://wigle.net) and [WDGWars](https://wdgwars.pl) over WiFi. You must provide your API credentials for either/both platforms in order for the upload feature to function. This is done using the [Webserver](#webserver-usage).
+Log files can be uploaded to WiGLE and WDGWars directly from the web UI or automatically via dock mode. Select a log file from the file list and choose Upload — options are WiGLE, WDGWars, or Both.
+
+Sidecar files (`.wigle` / `.wdg`) are created after successful uploads to prevent duplicate uploads across reboots.
+
+### Dock Mode
+Dock mode automates log uploads when the wardriver detects a configured trigger SSID.
+
+**How it works:**
+1. While wardriving or in standby, the device passively scans for the trigger SSID every 30 seconds
+2. When detected, it connects and uploads all pending log files (files without upload sidecars)
+3. It monitors for the trigger SSID to disappear, then resumes wardriving automatically
+
+**Two-tier operation:**
+- **Tier 1 (no GPS fix):** Connects and serves the web UI only — no upload triggered
+- **Tier 2 (GPS fix + SD card):** Full dock mode — uploads all pending logs to WiGLE and WDGWars
+
+Tier 1 automatically upgrades to Tier 2 if a GPS fix is acquired while docked.
+
+Configure the trigger SSID and password in the web UI under **Dock Mode**. The trigger SSID is separate from the boot WiFi network.
+
+### Geofence Zones
+Up to 5 geofence zones can be configured with a label, latitude/longitude, and radius (0.10 to 1.00 miles). When the wardriver enters a geofence zone, wardriving pauses and the zone name is shown on the display. Wardriving resumes automatically when the zone is exited.
+
+Zones are configured from the web UI under **Geofences**.
+
+### SSID Exclusions
+Up to 10 SSIDs can be added to the exclusion list. Networks matching an excluded SSID are never logged regardless of location. Useful for filtering out your own networks or known networks you don't want to record.
+
+Configure from the web UI under **SSID Exclusions**.
+
+### Debug Logging
+Enable **SD Debug Log** in the web UI Admin section to write all log entries to `/debug.log` on the SD card. Useful for diagnosing issues in the field without a serial connection. The debug log is available for download from the web UI file list but is excluded from upload queues.
 
 ## Modes
-The C5 Wardriver is capable of using multiple ESP32 modules as separate collection nodes with a single "Core" ESP32 to consolidate the collection data and save it to an SD card. The following section describes the process for selecting specific modes as well as the purpose for each mode. For [Nodes](#node-mode) and [Cores](#core-mode) to communicate, they do not require a physical connection to each other as their communication is conduction over-the-air. They are required to be within typical WiFi range of each other. **When configuring the device mode from the Admin web interface, the device will boot into that mode from that point on. If selecting the mode from the menu directly on the device, the mode is temporary and will reset upon next boot.**
+The C5 Wardriver supports multiple ESP32 modules operating as collection nodes reporting to a single Core device. Nodes and Cores communicate over-the-air within typical WiFi range.
 
-### Mode Selection
-Modes may be selected from the Admin web interface from [Initial Setup](#initial-setup) or from the main menu if using a full display and button hardware setup.
+**When configuring device mode from the web UI, the mode persists across reboots. When selecting mode from the on-device menu, it is temporary and resets on next boot.**
 
 ### Solo Mode
-Solo mode allows the C5 Wardriver to function as a standalone device which will collect and store data on its own. To function in solo mode, the device needs connection to an SD card and a GPS module and needs to have a GPS fix. While in Solo mode, users can upload logs directly to Wigle.
+Standalone operation. Requires SD card, GPS module, and GPS fix. Logs directly to SD and supports direct upload to WiGLE and WDGWars.
 
 ### Node Mode
-Node mode allows a device to collect wardriving data but instead of storing the data, it is given to a [Core](#core-mode) which is responsible for pairing the collection sata with location data and consolidating it into a wardriving log file. Nodes do not require SD card or GPS in order to function properly.
+Collects wardriving data and sends it to a Core device. Does not require SD card or GPS.
 
 ### Core Mode
-Core mode allows a device to receive wardriving data from [Nodes](#node-mode). This data is paired with location data and saved to a wardriving log file. Cores require an SD card and GPS module in order to function properly. Cores themselves do not collect wardriving data and because of this, do not require any specific antenna configurations. Cores can upload directly to Wigle, same as Solo mode.
+Receives data from Nodes, pairs it with GPS location data, and saves consolidated log files to SD. Requires SD card and GPS. Does not collect wardriving data itself. Supports direct upload to WiGLE and WDGWars.
 
 ### Encryption
-Communications between the [Nodes](#node-mode) and the [Core](#core-mode) can be encrypted. Encryption can be enabled using the Admin web interface from [Initial Setup](#initial-setup) however there is an important caveat. If encryption is enabled, the number of nodes you may use at once is limited to six due to memory constraints. If encryption is disabled, the number of nodes you may use at once is theoretically unlimited.
+Node-to-Core communications can be encrypted. Enable via the web UI. When encryption is enabled, a maximum of 6 nodes can operate simultaneously due to memory constraints. Without encryption, the number of nodes is theoretically unlimited.
