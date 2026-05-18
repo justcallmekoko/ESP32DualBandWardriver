@@ -141,6 +141,7 @@
 ////WiFi stuff
 #define mac_history_len 200
 #define CHANNEL_TIMER 80
+#define LOG_ROLL_ENTRIES  5000  // start a new log file after this many entries
 
 
 // ============================================================

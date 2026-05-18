@@ -995,6 +995,20 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
               }
 
               buffer.append(wardrive_line + "\n");
+
+              // Roll log file if entry limit reached
+              uint32_t total_entries = wifi_ops.getCurrent2g4Count() +
+              wifi_ops.getCurrent5gCount() +
+              wifi_ops.getCurrentBLECount();
+              if (total_entries >= LOG_ROLL_ENTRIES) {
+                Logger::log(STD_MSG, "[LOG] Rolling log — " +
+                String(LOG_ROLL_ENTRIES) + " entries reached");
+                wifi_ops.startLog(LOG_FILE_NAME);
+                wifi_ops.setCurrent2g4Count(0);
+                wifi_ops.setCurrent5gCount(0);
+                wifi_ops.setCurrentBLECount(0);
+                wifi_ops.setCurrentNetCount(0);
+              }
             }
           }
         }
