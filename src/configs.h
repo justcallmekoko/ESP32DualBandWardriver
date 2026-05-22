@@ -24,7 +24,7 @@
 #define JCMK_HOST_BOARD
 
 //// Firmware info stuff
-#define FIRMWARE_VERSION "v2.1.2"
+#define FIRMWARE_VERSION "v2.1.3"
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 //// Role stuff
