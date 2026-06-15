@@ -6,11 +6,13 @@ void UI::begin() {
   mode_menu.list    = new LinkedList<MenuNode>();
   upload_menu.list  = new LinkedList<MenuNode>();
   delete_all_menu.list = new LinkedList<MenuNode>();
+  upload_all_menu.list = new LinkedList<MenuNode>();
 
   mode_menu.name   = "Mode";
   action_menu.name = "Action";
   upload_menu.name = "Upload";
   delete_all_menu.name = "Delete All?";
+  upload_all_menu.name = "Upload All?";
 
   this->buildSDFileMenu();
 
@@ -18,6 +20,7 @@ void UI::begin() {
   mode_menu.parentMenu   = &sd_file_menu;
   upload_menu.parentMenu = &action_menu;  // Upload is a submenu of Action
   delete_all_menu.parentMenu = &sd_file_menu;
+  upload_all_menu.parentMenu = &sd_file_menu;
 
   // Delete all Menu
   this->addNodes(&delete_all_menu, "No", ST77XX_WHITE, NULL, 0, [this]() {
@@ -49,6 +52,77 @@ void UI::begin() {
     this->buildSDFileMenu();
 
     this->current_menu = &sd_file_menu;
+  });
+
+  // Upload all Menu
+  this->addNodes(&upload_all_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = upload_all_menu.parentMenu;
+  });
+  this->addNodes(&upload_all_menu, "WiGLE", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+        if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
+          Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
+          if (wifi_ops.uploadFile("/" + sd_obj.sd_files->get(i), false, WIGLE_UPLOAD)) {
+            display.clearScreen();
+            display.drawCenteredText("WiGLE OK", true);
+          } else {
+            display.clearScreen();
+            display.drawCenteredText("WiGLE failed", true);
+          }
+        }
+      }
+    }
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+    this->current_menu = upload_all_menu.parentMenu;
+  });
+  this->addNodes(&upload_all_menu, "WDGWars", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+        if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
+          Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
+          if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, false, WDG_UPLOAD)) {
+            display.clearScreen();
+            display.drawCenteredText("WDG OK", true);
+          } else {
+            display.clearScreen();
+            display.drawCenteredText("WDG failed", true);
+          }
+        }
+      }
+    }
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+    this->current_menu = upload_all_menu.parentMenu;
+  });
+  this->addNodes(&upload_all_menu, "Both", ST77XX_WHITE, NULL, 0, [this]() {
+    if (wifi_ops.tryConnectToWiFi()) {
+      delay(1000);
+      for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+        if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
+          Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
+          if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, false, BOTH_UPLOAD)) {
+            display.clearScreen();
+            display.drawCenteredText("Upload OK", true);
+          } else {
+            display.clearScreen();
+            display.drawCenteredText("Upload failed", true);
+          }
+        }
+      }
+    }
+    wifi_ops.deinitWiFi();
+    delay(10);
+    wifi_ops.initWiFi();
+    delay(2000);
+    this->current_menu = upload_all_menu.parentMenu;
   });
 
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
@@ -85,7 +159,7 @@ void UI::begin() {
   this->addNodes(&upload_menu, "WiGLE", ST77XX_WHITE, NULL, 0, [this]() {
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
-      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, WIGLE_UPLOAD)) {
+      if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, true, WIGLE_UPLOAD)) {
         display.clearScreen();
         display.drawCenteredText("WiGLE OK", true);
       } else {
@@ -102,7 +176,7 @@ void UI::begin() {
   this->addNodes(&upload_menu, "WDGWars", ST77XX_WHITE, NULL, 0, [this]() {
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
-      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, WDG_UPLOAD)) {
+      if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, true, WDG_UPLOAD)) {
         display.clearScreen();
         display.drawCenteredText("WDG OK", true);
       } else {
@@ -119,7 +193,7 @@ void UI::begin() {
   this->addNodes(&upload_menu, "Both", ST77XX_WHITE, NULL, 0, [this]() {
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
-      if (wifi_ops.backendUpload("/" + sd_obj.selected_file_name, BOTH_UPLOAD)) {
+      if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, true, BOTH_UPLOAD)) {
         display.clearScreen();
         display.drawCenteredText("Upload OK", true);
       } else {
@@ -231,6 +305,8 @@ void UI::drawStatsNew(uint32_t currentTime, uint32_t count2g4, uint32_t count5g,
 
   if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now)) return;
   lastUpdateTime = currentTime;
+
+  display.clearScreen();
 
   display.tft->setRotation(3);
   display.tft->setTextWrap(false);
@@ -362,6 +438,8 @@ void UI::updateStats(uint32_t currentTime, uint32_t wifiCount, uint32_t count2g4
   if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now)) return;
   lastUpdateTime = currentTime;
 
+  display.clearScreen();
+
   display.tft->setRotation(3);
   display.tft->setTextWrap(false);
 
@@ -445,11 +523,13 @@ void UI::buildSDFileMenu() {
 
     for (int i = 0; i < sd_obj.sd_files->size(); i++) {
       File current_file = sd_obj.getFile("/" + sd_obj.sd_files->get(i));
-      this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
-        sd_obj.selected_file_name = sd_obj.sd_files->get(i);
-        Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
-        this->current_menu = &action_menu;
-      }, current_file.size());
+      if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
+        this->addNodes(&sd_file_menu, sd_obj.sd_files->get(i), ST77XX_WHITE, NULL, 0, [this, i]() {
+          sd_obj.selected_file_name = sd_obj.sd_files->get(i);
+          Logger::log(STD_MSG, sd_obj.sd_files->get(i) + " selected");
+          this->current_menu = &action_menu;
+        }, current_file.size());
+      }
     }
 
     Logger::log(STD_MSG, "Built SD file menu with " + (String)sd_obj.sd_files->size() + " files");

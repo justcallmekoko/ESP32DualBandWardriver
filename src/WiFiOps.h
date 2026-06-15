@@ -234,7 +234,8 @@ class WiFiOps
     void deinitBLE();
     void deinitWiFi();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
-    bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
+    //bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
+    bool wigleUpload(String filePath);
 
 
     // --------------------------------------------------------
@@ -246,7 +247,8 @@ class WiFiOps
     void writeSidecar(String filePath,
                       String service);         // write sidecar on success
     bool uploadFile(String filePath,
-                    bool retry = false);       // upload to both services (sidecar-aware)
+                    bool retry = false,
+                    uint8_t upload_type = WIGLE_UPLOAD);       // upload to both services (sidecar-aware)
     void uploadAllPending();                   // scan SD and upload all files missing sidecars
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();

@@ -79,7 +79,7 @@
 
 
 //// UI Stuff
-#define UI_UPDATE_TIME 1 * 1000 // 1 second
+#define UI_UPDATE_TIME 5 * 1000 // 1 second
 
 #define U_BTN 9
 #define D_BTN 8

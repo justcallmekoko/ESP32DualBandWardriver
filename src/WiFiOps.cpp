@@ -1867,169 +1867,164 @@ void WiFiOps::startAccessPoint() {
   display.tft->println(WiFi.softAPIP().toString());
 }
 
-bool WiFiOps::backendUpload(String filePath, uint8_t upload_type) {
+bool WiFiOps::wigleUpload(String filePath) {
   //server.begin();
 
   display.clearScreen();
-  display.drawCenteredText("Uploading...", true);
+  display.drawCenteredText("Wigle Upload...", true);
 
   delay(100);
 
   if (!SD.exists(filePath)) {
-      display.clearScreen();
-      display.drawCenteredText(filePath + " not found", true);
-      Logger::log(WARN_MSG, "File does not exist: " + filePath);
-      return false;
-    }
+    display.clearScreen();
+    display.drawCenteredText(filePath + " not found", true);
+    Logger::log(WARN_MSG, "File does not exist: " + filePath);
+    return false;
+  }
 
-    File fileToUpload = SD.open(filePath);
-    if (!fileToUpload) {
-      display.clearScreen();
-      display.drawCenteredText("Could not open file", true);
-      Logger::log(WARN_MSG, "Could not open file: " + filePath);
-      return false;
-    }
+  File fileToUpload = SD.open(filePath);
+  if (!fileToUpload) {
+    display.clearScreen();
+    display.drawCenteredText("Could not open file", true);
+    Logger::log(WARN_MSG, "Could not open file: " + filePath);
+    return false;
+  }
 
-    // Load credentials
-    String username = settings.loadSetting<String>("wu");
-    String token = settings.loadSetting<String>("wt");
-    if (username.isEmpty() || token.isEmpty()) {
-      fileToUpload.close();
-      display.clearScreen();
-      display.drawCenteredText("No wigle creds", true);
-      Logger::log(WARN_MSG, "Missing wigle credentials");
-      return false;
-    }
-
-    Logger::log(STD_MSG, "Username: " + username);
-    Logger::log(STD_MSG, "Token: " + token);
-
-    String boundary = "----ESP32BOUNDARY";
-    String contentType = "multipart/form-data; boundary=" + boundary;
-
-    // Build parts
-    String part1 = "--" + boundary + "\r\n";
-    part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filePath + "\"\r\n";
-    part1 += "Content-Type: application/octet-stream\r\n\r\n";
-
-    String part2 = "\r\n--" + boundary + "\r\n";
-    part2 += "Content-Disposition: form-data; name=\"donate\"\r\n\r\non\r\n";
-
-    String part3 = "--" + boundary + "--\r\n";
-
-    int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
-
-    Logger::log(STD_MSG, "part1.length(): " + String(part1.length()));
-    Logger::log(STD_MSG, "fileToUpload.size(): " + String(fileToUpload.size()));
-    Logger::log(STD_MSG, "part2.length(): " + String(part2.length()));
-    Logger::log(STD_MSG, "part3.length(): " + String(part3.length()));
-    Logger::log(STD_MSG, "Total Content-Length: " + String(totalLength));
-
-    Serial.print("File size: ");
-    Serial.println(fileToUpload.size());
-
-    // Connect manually via WiFiClientSecure
-    //WiFiClientSecure *client = new WiFiClientSecure();
-    //client.stop();
-    client->setInsecure();
-
-    if (!client->connect("api.wigle.net", 443)) {
-      fileToUpload.close();
-      //delete client;
-      client->stop();
-      display.clearScreen();
-      display.drawCenteredText("Could not connect", true);
-      Logger::log(WARN_MSG, "Failed to connected to api.wigle.net");
-      return false;
-    }
-
-    Serial.println("Connected");
-
-    // Compose headers
-    String auth = utils.base64Encode(username + ":" + token);
-
-    Serial.println("Finished encoding");
-
-    client->println("POST /api/v2/file/upload HTTP/1.1");
-    client->println("Host: api.wigle.net");
-    client->println("User-Agent: ESP32Uploader/1.0");
-    client->println("Accept: application/json");
-    client->println("Authorization: Basic " + auth);
-    client->println("Content-Type: " + contentType);
-    client->print("Content-Length: ");
-    client->println(totalLength);
-    client->println();
-    delay(100);
-
-    Serial.println("Finished sending header");
-
-    // Send body
-    client->print(part1);
-    const size_t BUFFER_SIZE = 4096; // 1KB at a time
-    uint8_t buffer[BUFFER_SIZE];
-
-    Serial.println("Finished sending part1");
-
-    uint8_t percent_sent = 0;
-
-    String display_percent = "";
-
-    size_t totalBytesSent = 0;
-    while (fileToUpload.available()) {
-      size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
-      totalBytesSent += bytesRead;
-      Serial.print("Writing ");
-      Serial.print(totalBytesSent);
-      Serial.println(" bytes...");
-      percent_sent = (totalBytesSent * 100) / fileToUpload.size();
-      display.tft->drawRect(0, (TFT_HEIGHT / 3) * 2, TFT_WIDTH, TFT_HEIGHT, ST77XX_BLACK);
-      display.tft->setCursor(0, (TFT_HEIGHT / 3) * 2);
-      display_percent = (String)percent_sent + "%";
-      display.drawCenteredText(display_percent, false);
-      client->write(buffer, bytesRead);
-    }
-
-    Logger::log(STD_MSG, "Uploaded file bytes: " + String(totalBytesSent));
-
-    client->print(part2);
-    client->print(part3);
-
-    Serial.println("Finished sending part2 and part3");
-
+  // Load credentials
+  String username = settings.loadSetting<String>("wu");
+  String token = settings.loadSetting<String>("wt");
+  if (username.isEmpty() || token.isEmpty()) {
     fileToUpload.close();
+    display.clearScreen();
+    display.drawCenteredText("No wigle creds", true);
+    Logger::log(WARN_MSG, "Missing wigle credentials");
+    return false;
+  }
+
+  Logger::log(STD_MSG, "Username: " + username);
+  Logger::log(STD_MSG, "Token: " + token);
+
+  String boundary = "----ESP32BOUNDARY";
+  String contentType = "multipart/form-data; boundary=" + boundary;
+
+  // Build parts
+  String part1 = "--" + boundary + "\r\n";
+  part1 += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filePath + "\"\r\n";
+  part1 += "Content-Type: application/octet-stream\r\n\r\n";
+
+  String part2 = "\r\n--" + boundary + "\r\n";
+  part2 += "Content-Disposition: form-data; name=\"donate\"\r\n\r\non\r\n";
+
+  String part3 = "--" + boundary + "--\r\n";
+
+  int totalLength = part1.length() + fileToUpload.size() + part2.length() + part3.length();
+
+  Logger::log(STD_MSG, "part1.length(): " + String(part1.length()));
+  Logger::log(STD_MSG, "fileToUpload.size(): " + String(fileToUpload.size()));
+  Logger::log(STD_MSG, "part2.length(): " + String(part2.length()));
+  Logger::log(STD_MSG, "part3.length(): " + String(part3.length()));
+  Logger::log(STD_MSG, "Total Content-Length: " + String(totalLength));
+
+  Serial.print("File size: ");
+  Serial.println(fileToUpload.size());
+
+  // Connect manually via WiFiClientSecure
+  //WiFiClientSecure *client = new WiFiClientSecure();
+  //client.stop();
+  client->setInsecure();
+
+  if (!client->connect("api.wigle.net", 443)) {
+    fileToUpload.close();
+    //delete client;
+    client->stop();
+    display.clearScreen();
+    display.drawCenteredText("Could not connect", true);
+    Logger::log(WARN_MSG, "Failed to connected to api.wigle.net");
+    return false;
+  }
+
+  Serial.println("Connected");
+
+  // Compose headers
+  String auth = utils.base64Encode(username + ":" + token);
+
+  Serial.println("Finished encoding");
+
+  client->println("POST /api/v2/file/upload HTTP/1.1");
+  client->println("Host: api.wigle.net");
+  client->println("User-Agent: ESP32Uploader/1.0");
+  client->println("Accept: application/json");
+  client->println("Authorization: Basic " + auth);
+  client->println("Content-Type: " + contentType);
+  client->print("Content-Length: ");
+  client->println(totalLength);
+  client->println();
+  delay(100);
+
+  Serial.println("Finished sending header");
+
+  // Send body
+  client->print(part1);
+  const size_t BUFFER_SIZE = 4096; // 1KB at a time
+  uint8_t buffer[BUFFER_SIZE];
+
+  Serial.println("Finished sending part1");
+
+  uint8_t percent_sent = 0;
+
+  String display_percent = "";
+
+  size_t totalBytesSent = 0;
+  while (fileToUpload.available()) {
+    size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
+    totalBytesSent += bytesRead;
+    Serial.print("Writing ");
+    Serial.print(totalBytesSent);
+    Serial.println(" bytes...");
+    percent_sent = (totalBytesSent * 100) / fileToUpload.size();
+    display.tft->drawRect(0, (TFT_HEIGHT / 3) * 2, TFT_WIDTH, TFT_HEIGHT, ST77XX_BLACK);
+    display.tft->setCursor(0, (TFT_HEIGHT / 3) * 2);
+    display_percent = (String)percent_sent + "%";
+    display.drawCenteredText(display_percent, false);
+    client->write(buffer, bytesRead);
+  }
+
+  Logger::log(STD_MSG, "Uploaded file bytes: " + String(totalBytesSent));
+
+  client->print(part2);
+  client->print(part3);
+
+  Serial.println("Finished sending part2 and part3");
+
+  fileToUpload.close();
 
 
-    // Read response
-    String response;
-    unsigned long timeout = millis();
-    while (millis() - timeout < 5000) {
-      while (client->available()) {
-        char c = client->read();
-        response += c;
-      }
+  // Read response
+  String response;
+  unsigned long timeout = millis();
+  while (millis() - timeout < 5000) {
+    while (client->available()) {
+      char c = client->read();
+      response += c;
     }
+  }
 
-    if (millis() - timeout > 5000)
-      Logger::log(WARN_MSG, "Timeout reached");
-    if (!client->connected())
-      Logger::log(WARN_MSG, "Client disconnected");
+  if (millis() - timeout > 5000)
+    Logger::log(WARN_MSG, "Timeout reached");
+  if (!client->connected())
+    Logger::log(WARN_MSG, "Client disconnected");
       
   client->stop();
 
   String respTrunc = response.length() > 200 ? response.substring(0, 200) : response;
   Logger::log(STD_MSG, "[WIGLE] Response: " + respTrunc);
 
-  bool wigle_ok = true;
+  bool ok = response.indexOf("200 OK") >= 0;
 
-  if (upload_type == WDG_UPLOAD)
-    return this->wdgwarsUpload(filePath);
+  display.clearScreen();
+  display.drawCenteredText(ok ? "WIGLE OK" : "WIGLE Failed", true);
 
-  if (upload_type == BOTH_UPLOAD) {
-    bool wdg_ok = this->wdgwarsUpload(filePath);
-    return wigle_ok && wdg_ok;
-  }
-
-  return wigle_ok; // WIGLE_UPLOAD only
+  return ok;
 }
 
 // ============================================================
@@ -2157,7 +2152,7 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
   }
   client->stop();
 
-// Capture first 200 chars of response for log viewer
+  // Capture first 200 chars of response for log viewer
   String respTrunc = response.length() > 200 ? response.substring(0, 200) : response;
   Logger::log(STD_MSG, "[WDG] Response: " + respTrunc);
 
@@ -2176,7 +2171,11 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
 // Skips any service that already has a sidecar, unless retry=true.
 // Writes sidecar for each service that succeeds.
 // Returns true only if both uploads succeed (or were already done).
-bool WiFiOps::uploadFile(String filePath, bool retry) {
+bool WiFiOps::uploadFile(String filePath, bool retry, uint8_t upload_type) {
+  display.clearScreen();
+  display.drawCenteredText("Uploading " + filePath, true);
+  delay(1000);
+  
   Logger::log(STD_MSG, "[UPLOAD] uploadFile: " + filePath +
               (retry ? " (retry)" : ""));
 
@@ -2186,33 +2185,44 @@ bool WiFiOps::uploadFile(String filePath, bool retry) {
   bool wigle_ok = wigle_already;
   bool wdg_ok   = wdg_already;
 
-  if (!wigle_already) {
-    Logger::log(STD_MSG, "[UPLOAD] Uploading to WiGLE: " + filePath);
-    wigle_ok = this->backendUpload(filePath);
-    if (wigle_ok) {
-      this->writeSidecar(filePath, "wigle");
-      Logger::log(GUD_MSG, "[UPLOAD] WiGLE upload succeeded");
+  if ((upload_type == WIGLE_UPLOAD) || (upload_type == BOTH_UPLOAD)) {
+    if (!wigle_already) {
+      Logger::log(STD_MSG, "[UPLOAD] Uploading to WiGLE: " + filePath);
+      wigle_ok = this->wigleUpload(filePath);
+      if (wigle_ok) {
+        this->writeSidecar(filePath, "wigle");
+        Logger::log(GUD_MSG, "[UPLOAD] WiGLE upload succeeded");
+      } else {
+        Logger::log(WARN_MSG, "[UPLOAD] WiGLE upload failed");
+      }
     } else {
-      Logger::log(WARN_MSG, "[UPLOAD] WiGLE upload failed");
+      Logger::log(STD_MSG, "[UPLOAD] WiGLE already uploaded, skipping");
     }
-  } else {
-    Logger::log(STD_MSG, "[UPLOAD] WiGLE already uploaded, skipping");
   }
 
-  if (!wdg_already) {
-    Logger::log(STD_MSG, "[UPLOAD] Uploading to WDG Wars: " + filePath);
-    wdg_ok = this->wdgwarsUpload(filePath);
-    if (wdg_ok) {
-      this->writeSidecar(filePath, "wdg");
-      Logger::log(GUD_MSG, "[UPLOAD] WDG Wars upload succeeded");
+  if ((upload_type == WDG_UPLOAD) || (upload_type == BOTH_UPLOAD)) {
+    if (!wdg_already) {
+      Logger::log(STD_MSG, "[UPLOAD] Uploading to WDG Wars: " + filePath);
+      wdg_ok = this->wdgwarsUpload(filePath);
+      if (wdg_ok) {
+        this->writeSidecar(filePath, "wdg");
+        Logger::log(GUD_MSG, "[UPLOAD] WDG Wars upload succeeded");
+      } else {
+        Logger::log(WARN_MSG, "[UPLOAD] WDG Wars upload failed");
+      }
     } else {
-      Logger::log(WARN_MSG, "[UPLOAD] WDG Wars upload failed");
+      Logger::log(STD_MSG, "[UPLOAD] WDG Wars already uploaded, skipping");
     }
-  } else {
-    Logger::log(STD_MSG, "[UPLOAD] WDG Wars already uploaded, skipping");
   }
 
-  return wigle_ok && wdg_ok;
+  if (upload_type == WIGLE_UPLOAD)
+    return wigle_ok;
+  else if (upload_type == WDG_UPLOAD)
+    return wdg_ok;
+  else if (upload_type == BOTH_UPLOAD)
+    return wigle_ok && wdg_ok;
+  
+  return false;
 }
 
 // Scan the SD card root for all .log files that are missing at least
@@ -2250,7 +2260,7 @@ void WiFiOps::uploadAllPending() {
           Logger::log(STD_MSG, "[UPLOAD] Pending: " + path);
           bool wigle_needed = !wigle_done;
           bool wdg_needed   = !wdg_done;
-          bool ok = this->uploadFile(path, false);
+          bool ok = this->uploadFile(path, false, BOTH_UPLOAD);
           // Count as uploaded if all needed services succeeded
           bool wigle_now = this->sidecarExists(path, "wigle");
           bool wdg_now   = this->sidecarExists(path, "wdg");
@@ -2632,7 +2642,7 @@ void WiFiOps::serveConfigPage() {
     if (svc == "wigle") {
       bool already = !retry && this->sidecarExists(filePath, "wigle");
       if (!already) {
-        wigle_ok = this->backendUpload(filePath);
+        wigle_ok = this->wigleUpload(filePath);
         if (wigle_ok) this->writeSidecar(filePath, "wigle");
       }
     } else if (svc == "wdg") {
@@ -2643,7 +2653,7 @@ void WiFiOps::serveConfigPage() {
       }
     } else {
       // both
-      bool ok = this->uploadFile(filePath, retry);
+      bool ok = this->uploadFile(filePath, retry, BOTH_UPLOAD);
       wigle_ok = ok;
       wdg_ok   = ok;
     }

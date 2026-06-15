@@ -59,6 +59,7 @@ class UI {
     Menu action_menu;
     Menu upload_menu;
     Menu delete_all_menu;
+    Menu upload_all_menu;
     
 
     bool hard_refresh = false;
