@@ -397,6 +397,7 @@ void UI::buildSDFileMenu() {
         wifi_ops.startLog(LOG_FILE_NAME);
         Logger::log(STD_MSG, "New log file: " + buffer.getFileName());
       }
+      this->hard_refresh = true;
     });
 
     this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {
@@ -508,6 +509,14 @@ void UI::handleMenuNavigation() {
   }
 }
 
+void UI::doHardRefresh() {
+  if (this->hard_refresh) {
+    Logger::log(STD_MSG, "Hard-refreshing display...");
+    display.clearScreen();
+    this->hard_refresh = false;
+  }
+}
+
 void UI::main(uint32_t currentTime) {
 
   // Handle dock departure display reset
@@ -578,6 +587,8 @@ void UI::main(uint32_t currentTime) {
       this->incognito_counting = false;
       display.ctrlBacklight(true);
     }
+
+    this->doHardRefresh();
 
     // ---- Screen 1: new large-format stats ----
     if (this->stat_display_mode == STATS_NEW) {

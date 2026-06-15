@@ -24,7 +24,7 @@
 #define JCMK_HOST_BOARD
 
 //// Firmware info stuff
-#define FIRMWARE_VERSION "v2.1.3"
+#define FIRMWARE_VERSION "v2.3.0"
 #define DEVICE_NAME      "JCMK C5 Wardriver"
 
 //// Role stuff
@@ -94,7 +94,7 @@
 #define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
 #define WIFI_CONFIG "/settings.json"
 #define LOG_FILE_NAME "wardrive"
-#define SETTING_SANITY "wu"
+#define SETTING_SANITY "t_ssid"
 
 #define SMALL_CHAR_HEIGHT 8
 

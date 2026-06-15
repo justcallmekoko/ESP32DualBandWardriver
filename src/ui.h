@@ -59,6 +59,8 @@ class UI {
     Menu action_menu;
     Menu upload_menu;
 
+    bool hard_refresh = false;
+
     uint32_t init_time;
     uint32_t lastUpdateTime         = 0;
     uint32_t last_mode_change_ms    = 0; // debounce rapid button pushes
@@ -84,6 +86,8 @@ class UI {
     void buildSDFileMenu();
     void drawCurrentMenu();
     void handleMenuNavigation();
+
+    void doHardRefresh();
 
   public:
     Menu* current_menu = nullptr;
