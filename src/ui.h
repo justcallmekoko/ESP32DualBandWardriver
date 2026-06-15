@@ -56,6 +56,7 @@ class UI {
     Menu mode_menu;
     Menu action_menu;
     Menu upload_menu;
+    Menu delete_all_menu;
 
     uint32_t init_time;
     uint32_t lastUpdateTime = 0;
