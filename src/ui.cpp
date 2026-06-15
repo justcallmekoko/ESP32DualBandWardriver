@@ -16,6 +16,7 @@ void UI::begin() {
   mode_menu.parentMenu   = &sd_file_menu;
   upload_menu.parentMenu = &action_menu;  // Upload is a submenu of Action
 
+  // Action Menu
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->current_menu = action_menu.parentMenu;
   });

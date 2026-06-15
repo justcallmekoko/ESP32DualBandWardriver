@@ -2,8 +2,6 @@
 Based on the ESP32-C5-DevKitC-1 v1.2, the ESP32 Dual Band Wardriver offers wardriving capabilities for 2.4GHz and 5GHz WiFi as well as BLE.
 Logs are formatted for WiGLE and saved to SD card.
 
-> **This is a fork of [justcallmekoko/ESP32DualBandWardriver](https://github.com/justcallmekoko/ESP32DualBandWardriver) built for the JCMK C5 Wardriver host board, with additional features including dock mode, geofence zones, SSID exclusion, and display improvements.**
-
 ## Table of Contents
 - [Leaderboards](#leaderboards)
 - [Connections](#connections)
