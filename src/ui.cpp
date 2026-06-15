@@ -5,16 +5,51 @@ void UI::begin() {
   action_menu.list  = new LinkedList<MenuNode>();
   mode_menu.list    = new LinkedList<MenuNode>();
   upload_menu.list  = new LinkedList<MenuNode>();
+  delete_all_menu.list = new LinkedList<MenuNode>();
 
   mode_menu.name   = "Mode";
   action_menu.name = "Action";
   upload_menu.name = "Upload";
+  delete_all_menu.name = "Delete All?";
 
   this->buildSDFileMenu();
 
   action_menu.parentMenu = &sd_file_menu;
   mode_menu.parentMenu   = &sd_file_menu;
   upload_menu.parentMenu = &action_menu;  // Upload is a submenu of Action
+  delete_all_menu.parentMenu = &sd_file_menu;
+
+  // Delete all Menu
+  this->addNodes(&delete_all_menu, "No", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = delete_all_menu.parentMenu;
+  });
+  this->addNodes(&delete_all_menu, "Yes", ST77XX_WHITE, NULL, 0, [this]() {
+    display.clearScreen();
+
+    display.drawCenteredText("Deleting Logs...");
+
+    buffer.setFileName("");
+
+    for (int i = 0; i < sd_obj.sd_files->size(); i++) {
+      if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
+        if (sd_obj.removeFile("/" + sd_obj.sd_files->get(i))) {
+          Logger::log(STD_MSG, "Removed file: " + sd_obj.sd_files->get(i));
+        }
+        else {
+          Logger::log(WARN_MSG, "Could not remove file: " + sd_obj.sd_files->get(i));
+        }
+      }
+    }
+    display.clearScreen();
+
+    display.drawCenteredText("Logs removed");
+
+    delay(2000);
+
+    this->buildSDFileMenu();
+
+    this->current_menu = &sd_file_menu;
+  });
 
   this->addNodes(&action_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
     this->current_menu = action_menu.parentMenu;
@@ -398,6 +433,10 @@ void UI::buildSDFileMenu() {
         Logger::log(STD_MSG, "New log file: " + buffer.getFileName());
       }
       this->hard_refresh = true;
+    });
+
+    this->addNodes(&sd_file_menu, "Delete Wardrive Logs", ST77XX_WHITE, NULL, 0, [this]() {
+      this->current_menu = &delete_all_menu;
     });
 
     this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {
