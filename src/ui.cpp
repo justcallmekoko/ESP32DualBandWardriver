@@ -418,13 +418,23 @@ void UI::drawStatsNew(uint32_t currentTime, uint32_t count2g4, uint32_t count5g,
     display.tft->setTextColor(ST77XX_RED, ST77XX_BLACK);
     display.tft->print("NO SD CARD                ");
   } else if (wifi_ops.in_geofence && wifi_ops.current_geo_label.length() > 0) {
+    char dist[16];
     display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    String geo = "GEO: " + wifi_ops.current_geo_label;
-    while (geo.length() < 26) geo += " ";
+    String geo = "GEO: " + wifi_ops.current_geo_label + " ";
+    //while (geo.length() < 26) geo += " ";
     display.tft->print(geo);
+    if (wifi_ops.checkGeofences(dist, sizeof(dist)))
+      display.tft->print(dist);
   } else {
     display.tft->setTextColor(ST77XX_BLACK, ST77XX_BLACK);
     display.tft->print("                          ");
+  }
+
+  if (wifi_ops.run_mode == CORE_MODE) {
+    String node_num = "Nodes: " + String(wifi_ops.getNodeCount());
+    display.tft->setCursor(TFT_WIDTH - node_num.length() * 6, 80 - 9);
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->print(node_num);
   }
 }
 
@@ -515,6 +525,10 @@ void UI::buildSDFileMenu() {
 
     this->addNodes(&sd_file_menu, "Delete Wardrive Logs", ST77XX_WHITE, NULL, 0, [this]() {
       this->current_menu = &delete_all_menu;
+    });
+
+    this->addNodes(&sd_file_menu, "Upload All", ST77XX_WHITE, NULL, 0, [this]() {
+      this->current_menu = &upload_all_menu;
     });
 
     this->addNodes(&sd_file_menu, "Mode", ST77XX_WHITE, NULL, 0, [this]() {

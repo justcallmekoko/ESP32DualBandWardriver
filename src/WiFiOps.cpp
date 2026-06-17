@@ -949,7 +949,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
         wifi_ops.sendAdminToNodeSlot(slot, info->src_addr);
       }*/
 
-      if (t->len <= ENOW_TEXT_MAX) {
+      if ((t->len <= ENOW_TEXT_MAX) && (!wifi_ops.checkGeofences())) {
         Serial.printf("CORE: RX WARDRV TEXT from %s: %s\n", srcMacStr, t->text);
 
         WardriveRecord rec;
@@ -1220,27 +1220,27 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
 
   int scan_status = -1;
 
-  if ((this->run_mode == SOLO_MODE) || (this->run_mode == NODE_MODE)) {
-
-    // ---- Chunk 5: geofence check ----
-    // Only check when we have a GPS fix — no position, no geofence.
-    // Dock mode (Chunk 6) handles K1T upload trigger while paused.
-    if (gps.getGpsModuleStatus() && gps.getFixStatus()) {
-      if (this->checkGeofences()) {
-        // Chunk 6: while geofence-paused, periodically scan for trigger SSID
-        // so K1T can still trigger a dock+upload even when wardriving is paused.
-        if (millis() - this->geo_passive_scan_time >= DOCK_SCAN_INTERVAL) {
-          this->geo_passive_scan_time = millis();
-          if (this->scanForTriggerSSID()) {
-            Logger::log(STD_MSG, "[DOCK] Trigger SSID found during geofence pause");
-            this->dock_state            = DOCK_STATE_CONNECTING;
-            this->dock_connect_attempts = 0;
-          }
+  // ---- Chunk 5: geofence check ----
+  // Only check when we have a GPS fix — no position, no geofence.
+  // Dock mode (Chunk 6) handles K1T upload trigger while paused.
+  if (gps.getGpsModuleStatus() && gps.getFixStatus()) {
+    if (this->checkGeofences()) {
+      // Chunk 6: while geofence-paused, periodically scan for trigger SSID
+      // so K1T can still trigger a dock+upload even when wardriving is paused.
+      if (millis() - this->geo_passive_scan_time >= DOCK_SCAN_INTERVAL) {
+        this->geo_passive_scan_time = millis();
+        if (this->scanForTriggerSSID()) {
+          Logger::log(STD_MSG, "[DOCK] Trigger SSID found during geofence pause");
+          this->dock_state            = DOCK_STATE_CONNECTING;
+          this->dock_connect_attempts = 0;
         }
-        return -1; // inside a geofence — pause wardriving
       }
+      return -1; // inside a geofence — pause wardriving
     }
-    // ---- end geofence check ----
+  }
+  // ---- end geofence check ----
+
+  if ((this->run_mode == SOLO_MODE) || (this->run_mode == NODE_MODE)) {
 
     // Check GPS status
     if (((gps.getGpsModuleStatus()) && (gps.getFixStatus()) && (sd_obj.supported)) || 
@@ -1390,7 +1390,7 @@ void WiFiOps::reloadGeofenceCache() {
 // Check whether the current GPS position falls inside any configured zone.
 // Handles enter/exit state transitions with logging and TFT feedback.
 // Returns true if inside any zone (wardriving should pause).
-bool WiFiOps::checkGeofences() {
+bool WiFiOps::checkGeofences(char* dist_str, size_t dist_str_len) {
   // Lazy-load cache if not yet populated
   if (!geo_cache_loaded)
     this->loadGeofenceCache();
@@ -1398,46 +1398,81 @@ bool WiFiOps::checkGeofences() {
   // Quick exit if no zones are configured
   bool any_valid = false;
   for (int i = 0; i < MAX_GEOFENCES; i++) {
-    if (geo_cache[i].valid) { any_valid = true; break; }
+    if (geo_cache[i].valid) {
+      any_valid = true;
+      break;
+    }
   }
-  if (!any_valid) return false;
+  if (!any_valid)
+    return false;
 
   float cur_lat = gps.getLat().toFloat();
   float cur_lon = gps.getLon().toFloat();
 
   for (int i = 0; i < MAX_GEOFENCES; i++) {
-    if (!geo_cache[i].valid) continue;
+    if (!geo_cache[i].valid)
+      continue;
 
-    float dist = this->haversineDistance(cur_lat, cur_lon,
-                                          geo_cache[i].lat,
-                                          geo_cache[i].lon);
+    float dist = this->haversineDistance(
+      cur_lat,
+      cur_lon,
+      geo_cache[i].lat,
+      geo_cache[i].lon);
 
     if (dist <= (float)geo_cache[i].rad) {
+      // Populate caller's distance string if supplied
+      if (dist_str && dist_str_len > 0) {
+        int dist_ft = (int)(dist * 3.28084f);
+
+        if (dist_ft >= 5280) {
+          snprintf(
+            dist_str,
+            dist_str_len,
+            "%.2fmi",
+            dist_ft / 5280.0f);
+        } else {
+          snprintf(
+            dist_str,
+            dist_str_len,
+            "%dft",
+            dist_ft);
+        }
+      }
+
       // Inside this zone
       bool was_in = this->in_geofence;
       bool label_changed = (this->current_geo_label != geo_cache[i].label);
 
       if (!was_in || label_changed) {
-        // Entering or switching zones — log the transition
-        this->in_geofence       = true;
+        this->in_geofence = true;
         this->current_geo_label = geo_cache[i].label;
 
-        Logger::log(STD_MSG, "[GEO] Entered zone: \"" +
-                    this->current_geo_label + "\"  dist=" +
-                    String((int)(dist * 3.28084)) + "ft  rad=" +
-                    String((int)(geo_cache[i].rad * 3.28084)) + "ft");
+        Logger::log(
+          STD_MSG,
+          "[GEO] Entered zone: \"" +
+          this->current_geo_label +
+          "\"  dist=" +
+          String((int)(dist * 3.28084)) +
+          "ft  rad=" +
+          String((int)(geo_cache[i].rad * 3.28084)) +
+          "ft");
 
-        // Update TFT to show paused state
         display.clearScreen();
         display.tft->setCursor(0, 0);
         display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
         display.tft->println("GEOFENCE PAUSED");
         display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-        int dist_ft = (int)(dist * 3.28084);
-        String dist_str = (dist_ft >= 528) ?
-          String(dist_ft / 5280.0f, 2) + "mi" :
-          String(dist_ft) + "ft";
-        display.tft->println(this->current_geo_label + " " + dist_str);
+
+        int dist_ft = (int)(dist * 3.28084f);
+
+        String display_dist =
+          (dist_ft >= 5280)
+            ? String(dist_ft / 5280.0f, 2) + "mi"
+            : String(dist_ft) + "ft";
+
+        display.tft->println(
+          this->current_geo_label + " " + display_dist);
+
         this->geo_display_shown = true;
       }
 
@@ -1447,13 +1482,16 @@ bool WiFiOps::checkGeofences() {
 
   // Not inside any zone — handle exit transition
   if (this->in_geofence) {
-    Logger::log(STD_MSG, "[GEO] Exited zone: \"" +
-                this->current_geo_label + "\" — resuming wardrive");
-    this->in_geofence       = false;
+    Logger::log(
+      STD_MSG,
+      "[GEO] Exited zone: \"" +
+      this->current_geo_label +
+      "\" — resuming wardrive");
+
+    this->in_geofence = false;
     this->current_geo_label = "";
     this->geo_display_shown = false;
 
-    // Clear geofence display so normal UI can reclaim TFT
     display.clearScreen();
   }
 
@@ -2892,7 +2930,11 @@ bool WiFiOps::scanForTriggerSSID() {
   if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
   WiFi.scanDelete();
 
-  int n = WiFi.scanNetworks(false, true); // synchronous, include hidden
+  //Logger::log(STD_MSG, "Scanning for trigger networks...");
+  uint32_t start_time = millis();
+  int n = WiFi.scanNetworks(false, true, false, 100); // synchronous, include hidden
+  //Logger::log(STD_MSG, "Scan completed in " + String(millis() - start_time) + "ms");
+
   bool found = false;
   for (int i = 0; i < n; i++) {
     if (WiFi.SSID(i) == trigSSID) { found = true; break; }

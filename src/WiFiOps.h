@@ -170,7 +170,6 @@ class WiFiOps
     void  loadGeofenceCache();
     float haversineDistance(float lat1, float lon1,
                             float lat2, float lon2);
-    bool  checkGeofences(); // returns true if current pos is inside any zone
 
     // --------------------------------------------------------
     // Chunk 6: Dock mode private state and methods
@@ -220,6 +219,7 @@ class WiFiOps
     bool   in_geofence       = false;
     String current_geo_label = "";
     void   reloadGeofenceCache(); // call after settings change
+    bool checkGeofences(char* dist_str = nullptr, size_t dist_str_len = 0); // returns true if current pos is inside any zone
 
     // --------------------------------------------------------
     // Chunk 6: Dock mode public state
