@@ -1229,6 +1229,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
       // so K1T can still trigger a dock+upload even when wardriving is paused.
       if (millis() - this->geo_passive_scan_time >= DOCK_SCAN_INTERVAL) {
         this->geo_passive_scan_time = millis();
+        //Logger::log(STD_MSG, "Calling scanForTriggerSSID from runWardrive");
         if (this->scanForTriggerSSID()) {
           Logger::log(STD_MSG, "[DOCK] Trigger SSID found during geofence pause");
           this->dock_state            = DOCK_STATE_CONNECTING;
@@ -3214,18 +3215,19 @@ void WiFiOps::main(uint32_t currentTime) {
     this->dock_state == DOCK_STATE_NONE &&
     this->run_mode == SOLO_MODE) {
     String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
-  if (!trigSSID.isEmpty() &&
-    currentTime - this->standby_scan_time >= STANDBY_SCAN_INTERVAL &&
-    currentTime - this->dock_depart_time >= 60000) { // 60s cooldown after departing
-    this->standby_scan_time = currentTime;
-  if (this->scanForTriggerSSID()) {
-    Logger::log(STD_MSG, "[DOCK] Trigger SSID found in standby: " + trigSSID);
-    this->dock_webui_only       = !gps.getFixStatus();
-    this->dock_state            = DOCK_STATE_CONNECTING;
-    this->dock_connect_attempts = 0;
+    if (!trigSSID.isEmpty() &&
+      currentTime - this->standby_scan_time >= STANDBY_SCAN_INTERVAL &&
+      currentTime - this->dock_depart_time >= 60000) { // 60s cooldown after departing
+      this->standby_scan_time = currentTime;
+      //Logger::log(STD_MSG, "Calling scanForTriggerSSID from main");
+      if (this->scanForTriggerSSID()) {
+        Logger::log(STD_MSG, "[DOCK] Trigger SSID found in standby: " + trigSSID);
+        this->dock_webui_only       = !gps.getFixStatus();
+        this->dock_state            = DOCK_STATE_CONNECTING;
+        this->dock_connect_attempts = 0;
+      }
+    }
   }
-    }
-    }
 
   if (this->run_mode == CORE_MODE) {
     if (currentTime - g_last_debug_print >= DEBUG_OUTPUT_DELAY) {

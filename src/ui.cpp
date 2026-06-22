@@ -64,7 +64,7 @@ void UI::begin() {
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
         if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
           Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
-          if (wifi_ops.uploadFile("/" + sd_obj.sd_files->get(i), false, WIGLE_UPLOAD)) {
+          if (wifi_ops.uploadFile("/" + sd_obj.sd_files->get(i), true, WIGLE_UPLOAD)) {
             display.clearScreen();
             display.drawCenteredText("WiGLE OK", true);
           } else {
@@ -86,7 +86,7 @@ void UI::begin() {
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
         if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
           Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
-          if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, false, WDG_UPLOAD)) {
+          if (wifi_ops.uploadFile("/" + sd_obj.sd_files->get(i), true, WDG_UPLOAD)) {
             display.clearScreen();
             display.drawCenteredText("WDG OK", true);
           } else {
@@ -108,7 +108,7 @@ void UI::begin() {
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
         if (sd_obj.sd_files->get(i).startsWith("wardrive_")) {
           Logger::log(STD_MSG, "Uploading " + sd_obj.sd_files->get(i) + "...");
-          if (wifi_ops.uploadFile("/" + sd_obj.selected_file_name, false, BOTH_UPLOAD)) {
+          if (wifi_ops.uploadFile("/" + sd_obj.sd_files->get(i), true, BOTH_UPLOAD)) {
             display.clearScreen();
             display.drawCenteredText("Upload OK", true);
           } else {
