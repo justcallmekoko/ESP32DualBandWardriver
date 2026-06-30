@@ -3187,7 +3187,7 @@ void WiFiOps::departDock() {
 
 // ============================================================
 
-void WiFiOps::main(uint32_t currentTime) {
+void WiFiOps::main(uint32_t currentTime, bool in_sd_files) {
   // Chunk 6: dock mode takes priority over normal wardrive cycle
   if (this->dock_state != DOCK_STATE_NONE) {
     this->runDockMode(currentTime);
@@ -3213,7 +3213,8 @@ void WiFiOps::main(uint32_t currentTime) {
   // Tier 2 (GPS fix): full dock mode with upload.
   if (this->current_scan_mode == WIFI_STANDBY &&
     this->dock_state == DOCK_STATE_NONE &&
-    this->run_mode == SOLO_MODE) {
+    this->run_mode == SOLO_MODE &&
+    !in_sd_files) {
     String trigSSID = settings.loadSetting<String>(TRIGGER_SSID_NAME);
     if (!trigSSID.isEmpty() &&
       currentTime - this->standby_scan_time >= STANDBY_SCAN_INTERVAL &&

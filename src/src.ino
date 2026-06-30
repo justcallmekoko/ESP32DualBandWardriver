@@ -103,7 +103,7 @@ void loop() {
   uint32_t currentTime = millis();
 
   // Refresh all functions
-  wifi_ops.main(currentTime);
+  wifi_ops.main(currentTime, ui_obj.stat_display_mode == SD_FILES);
   settings.main(currentTime);
   battery.main(currentTime);
   gps.main();

@@ -227,7 +227,7 @@ class WiFiOps
     String dock_ip = ""; // IP address shown on TFT while docked
 
     bool begin(bool skip_admin = false);
-    void main(uint32_t currentTime);
+    void main(uint32_t currentTime, bool in_sd_files = false);
     void startLog(String file_name);
     void initBLE();
     void initWiFi(bool set_country = false);

@@ -474,13 +474,19 @@ void UI::drawStatsNew(uint32_t currentTime, uint32_t count2g4, uint32_t count5g,
   display.tft->setTextColor(0x7BEF, ST77XX_BLACK);
   display.tft->print("W:");
   display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  if (wifi_ops.getTotalNetCount() > 9999)
+    display.tft->setTextSize(1);
   display.tft->print(totalNets);
+  display.tft->setTextSize(2);
 
   display.tft->setCursor(TFT_WIDTH / 2, 50);
   display.tft->setTextColor(0x7BEF, ST77XX_BLACK);
   display.tft->print("B:");
   display.tft->setTextColor(0xF81F, ST77XX_BLACK);
+  if (wifi_ops.getTotalBLECount() > 9999)
+    display.tft->setTextSize(1);
   display.tft->print(totalBLE);
+  display.tft->setTextSize(2);
 
   // ---- Geofence label (size 1, bottom row) ----
   display.tft->setTextSize(1);
