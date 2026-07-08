@@ -8,6 +8,7 @@
 #include "GpsInterface.h"
 #include "Buffer.h"
 #include "display.h"
+#include "BatteryInterface.h"
 #include "SDInterface.h"
 
 #include <esp_now.h>
@@ -29,14 +30,24 @@ extern Buffer buffer;
 extern Utils utils;
 extern Settings settings;
 extern Display display;
-
+extern BatteryInterface battery;
 extern WebServer server;
 
-// Upload types
+// ============================================================
+// Chunk 5: Geofence entry struct
+// Populated from settings "geo_0".."geo_4" JSON strings.
+// ============================================================
+struct GeofenceEntry {
+  float  lat   = 0.0f;
+  float  lon   = 0.0f;
+  int    rad   = 0;      // radius in metres; 0 = unconfigured
+  String label = "";
+  bool   valid = false;  // true when rad > 0 and lat/lon non-zero
+};
+
 #define WIGLE_UPLOAD 0
 #define WDG_UPLOAD   1
 #define BOTH_UPLOAD  2
-
 #define WIFI_STANDBY    0
 #define WIFI_WARDRIVING 1
 #define WIFI_UPDATE     2
@@ -91,6 +102,7 @@ class WiFiOps
 {
   private:
     NimBLEScan* pBLEScan;
+    bool ble_initialized = false;
 
     wifi_country_t country = {
       .cc = "PH",
@@ -98,7 +110,7 @@ class WiFiOps
       .nchan = 13,
       .policy = WIFI_COUNTRY_POLICY_AUTO,
     };
-
+    uint32_t dock_depart_time = 0;  // timestamp of last dock departure
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
     const char* apSSID = "c5wardriver";
@@ -110,7 +122,6 @@ class WiFiOps
     String user_ap_password = "";
     String wigle_user = "";
     String wigle_token = "";
-    String wdg_token = "";
 
     bool connected_as_client = false;
 
@@ -138,6 +149,7 @@ class WiFiOps
     int touchNode(const uint8_t* mac, bool& isNewNode);
     uint8_t getNodeStartChannel(uint8_t slot);
     uint8_t getNodeEndChannel(uint8_t slot);
+    uint8_t getActiveNodeCount();
     void showCountdown();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
@@ -146,6 +158,37 @@ class WiFiOps
     String security_int_to_string(int security_type);
     void processWardrive(uint16_t networks);
     void shutdownAccessPoint(bool ap_active = true);
+    bool isSSIDExcluded(const String& ssid, const String* list, int count); // Chunk 4
+
+    // --------------------------------------------------------
+    // Chunk 5: Geofence private members
+    // --------------------------------------------------------
+    GeofenceEntry geo_cache[MAX_GEOFENCES]; // parsed geofence entries
+    bool          geo_cache_loaded  = false;
+    bool          geo_display_shown = false; // tracks TFT state to avoid redraw spam
+
+    void  loadGeofenceCache();
+    float haversineDistance(float lat1, float lon1,
+                            float lat2, float lon2);
+
+    // --------------------------------------------------------
+    // Chunk 6: Dock mode private state and methods
+    // --------------------------------------------------------
+    int      dock_state            = DOCK_STATE_NONE;
+    int      dock_connect_attempts = 0;
+    uint32_t dock_fail_time        = 0;
+    uint32_t dock_last_scan_time   = 0;
+    int      dock_depart_count     = 0;
+    uint32_t geo_passive_scan_time = 0; // for geofence-paused trigger scans
+    uint32_t standby_scan_time     = 0; // for periodic K1T scan in standby (no GPS)
+    bool     dock_webui_only       = false; // true = Tier 1 (web UI only, no GPS fix)
+
+    bool scanForTriggerSSID();    // synchronous passive scan for trigger SSID
+    void runDockMode(uint32_t currentTime);
+    void handleDockConnecting();
+    void handleDockUploading();
+    void handleDockMonitoring(uint32_t currentTime);
+    void departDock();
 
   public:
     #ifdef CORE
@@ -162,24 +205,51 @@ class WiFiOps
     uint32_t last_web_client_activity;
     uint32_t last_timer;
     bool use_encryption = false;
+    bool isDocked() { return dock_state != DOCK_STATE_NONE; }
+    uint8_t getNodeCount() { return getActiveNodeCount(); }
 
     uint8_t current_assignment_version = 1;
     uint8_t current_assigned_scan_idx = 0;
 
     String esp_now_key = "";
 
+    // --------------------------------------------------------
+    // Chunk 5: Geofence public state
+    // --------------------------------------------------------
+    bool   in_geofence       = false;
+    String current_geo_label = "";
+    void   reloadGeofenceCache(); // call after settings change
+    bool checkGeofences(char* dist_str = nullptr, size_t dist_str_len = 0); // returns true if current pos is inside any zone
+
+    // --------------------------------------------------------
+    // Chunk 6: Dock mode public state
+    // --------------------------------------------------------
+    String dock_ip = ""; // IP address shown on TFT while docked
+
     bool begin(bool skip_admin = false);
-    void main(uint32_t currentTime);
+    void main(uint32_t currentTime, bool in_sd_files = false);
     void startLog(String file_name);
     void initBLE();
     void initWiFi(bool set_country = false);
     void deinitBLE();
     void deinitWiFi();
-    uint8_t getActiveNodeCount();
     bool tryConnectToWiFi(unsigned long timeoutMs = STATION_CONNECT_TIMEOUT);
-    bool uploadToWDG(String filePath, File fileToUpload);
-    bool uploadToWigle(String filePath, File fileToUpload);
-    bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
+    //bool backendUpload(String filePath, uint8_t upload_type = WIGLE_UPLOAD);
+    bool wigleUpload(String filePath);
+
+
+    // --------------------------------------------------------
+    // Chunk 3: WDG Wars upload + sidecar tracking system
+    // --------------------------------------------------------
+    bool wdgwarsUpload(String filePath);       // upload one file to WDG Wars
+    bool sidecarExists(String filePath,
+                       String service);        // check .wigle / .wdg sidecar
+    void writeSidecar(String filePath,
+                      String service);         // write sidecar on success
+    bool uploadFile(String filePath,
+                    bool retry = false,
+                    uint8_t upload_type = WIGLE_UPLOAD);       // upload to both services (sidecar-aware)
+    void uploadAllPending();                   // scan SD and upload all files missing sidecars
     void setCurrentScanMode(uint8_t scan_mode);
     uint8_t getCurrentScanMode();
     void setTotalNetCount(uint32_t count);
@@ -208,6 +278,7 @@ class WiFiOps
     void startAccessPoint();
     void serveConfigPage();
     bool monitorAP(unsigned long timeoutMs = WEB_PAGE_TIMEOUT);
+    bool checkAuth(); // Chunk 1: Basic Auth check for web UI
 
     static void setFixedChannel(uint8_t ch);
     static bool addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]);

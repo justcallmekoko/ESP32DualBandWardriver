@@ -1,15 +1,14 @@
 #include "BatteryInterface.h"
+
 BatteryInterface::BatteryInterface() {
-  
 }
 
 void BatteryInterface::main(uint32_t currentTime) {
   if (currentTime != 0) {
     if (currentTime - initTime >= 3000) {
-      //Serial.println("Checking Battery Level");
       this->initTime = millis();
+
       int8_t new_level = this->getBatteryLevel();
-      //this->battery_level = this->getBatteryLevel();
       if (this->battery_level != new_level) {
         Logger::log(STD_MSG, "Battery Level changed: " + (String)new_level);
         this->battery_level = new_level;
@@ -21,7 +20,6 @@ void BatteryInterface::main(uint32_t currentTime) {
 
 void BatteryInterface::RunSetup() {
   byte error;
-  byte addr;
 
   #ifdef HAS_BATTERY
 
@@ -34,7 +32,7 @@ void BatteryInterface::RunSetup() {
 
     if (error == 0) {
       Logger::log(GUD_MSG, "Detected IP5306");
-      this->has_ip5306 = true;
+      this->has_ip5306    = true;
       this->i2c_supported = true;
     }
 
@@ -44,46 +42,13 @@ void BatteryInterface::RunSetup() {
     if (error == 0) {
       if (maxlipo.begin()) {
         Logger::log(GUD_MSG, "Detected MAX17048");
-        this->has_max17048 = true;
+        this->has_max17048  = true;
         this->i2c_supported = true;
       }
     }
 
-    /*for(addr = 1; addr < 127; addr++ ) {
-      Wire.beginTransmission(addr);
-      error = Wire.endTransmission();
-
-      if (error == 0)
-      {
-        Serial.print("I2C device found at address 0x");
-        
-        if (addr<16)
-          Serial.print("0");
-
-        Serial.println(addr,HEX);
-        
-        if (addr == IP5306_ADDR) {
-          this->has_ip5306 = true;
-          this->i2c_supported = true;
-        }
-
-        if (addr == MAX17048_ADDR) {
-          if (maxlipo.begin()) {
-            Serial.println("Detected MAX17048");
-            this->has_max17048 = true;
-            this->i2c_supported = true;
-          }
-        }
-      }
-    }*/
-
-    /*if (this->maxlipo.begin()) {
-      Serial.println("Detected MAX17048");
-      this->has_max17048 = true;
-      this->i2c_supported = true;
-    }*/
-    
     this->initTime = millis();
+
   #endif
 }
 
@@ -100,24 +65,22 @@ int8_t BatteryInterface::getBatteryLevel() {
         case 0xC0: return 50;
         case 0x80: return 75;
         case 0x00: return 100;
-        default: return 0;
+        default:   return 0;
       }
     }
     this->i2c_supported = false;
     return -1;
   }
 
-
   if (this->has_max17048) {
     float percent = this->maxlipo.cellPercent();
 
-    // Sometimes we dumb
     if (percent >= 100)
       return 100;
     else if (percent <= 0)
       return 0;
     else
-      return percent;
+      return (int8_t)percent;
   }
 
   return 0;

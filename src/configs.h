@@ -79,7 +79,7 @@
 
 
 //// UI Stuff
-#define UI_UPDATE_TIME 1 * 1000 // 1 second
+#define UI_UPDATE_TIME 5 * 1000 // 1 second
 
 #define U_BTN 9
 #define D_BTN 8
@@ -94,7 +94,7 @@
 #define STATION_CONNECT_TIMEOUT 5 * 1000 // 5 seconds
 #define WIFI_CONFIG "/settings.json"
 #define LOG_FILE_NAME "wardrive"
-#define SETTING_SANITY "wu"
+#define SETTING_SANITY "t_ssid"
 
 #define SMALL_CHAR_HEIGHT 8
 
@@ -119,10 +119,13 @@
 //// SD stuff
 #define SPI_SCK  6
 #define SPI_MISO 2
-#define SPI_MOSI 7 
+#define SPI_MOSI 7
 #define SD_CS    10
 
 #define UPDATE_KEY "UpdateFile"
+
+//// Debug log
+#define DEBUG_LOG_FILE "/debug.log"
 
 
 //// Switch stuff
@@ -138,5 +141,37 @@
 ////WiFi stuff
 #define mac_history_len 200
 #define CHANNEL_TIMER 80
+#define LOG_ROLL_ENTRIES  10000  // start a new log file after this many entries
+
+
+// ============================================================
+// Chunk 1: Extended feature constants
+// ============================================================
+
+//// Geofence stuff
+#define MAX_GEOFENCES         5
+
+//// SSID Exclusion stuff
+#define MAX_SSID_EXCLUSIONS   10
+
+//// Dock mode stuff
+#define DOCK_CONNECT_ATTEMPTS  3
+#define DOCK_CONNECT_TIMEOUT   10 * 1000   // 10 seconds per attempt
+#define DOCK_SCAN_INTERVAL     30 * 1000   // passive scan every 30s while docked
+#define DOCK_DEPART_SCANS      2           // consecutive misses before resuming wardrive
+#define DOCK_FAIL_DISPLAY_MS   20 * 1000   // show K1T failure message for 20s
+#define STANDBY_SCAN_INTERVAL  30 * 1000   // scan for K1T every 30s while in standby (no GPS)
+
+//// Settings JSON buffer — bumped from 2048 to handle 30 settings entries
+#define SETTINGS_JSON_SIZE     4096
+
+// ============================================================
+// Chunk 6: Dock mode state constants
+// ============================================================
+#define DOCK_STATE_NONE       0  // wardriving normally
+#define DOCK_STATE_CONNECTING 1  // attempting WiFi connect to trigger SSID
+#define DOCK_STATE_UPLOADING  2  // uploading all pending log files
+#define DOCK_STATE_MONITORING 3  // watching for trigger SSID departure
+#define DOCK_STATE_FAILED     4  // connect failed, showing message before resume
 
 #endif
