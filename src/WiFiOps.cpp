@@ -1971,6 +1971,7 @@ bool WiFiOps::wigleUpload(String filePath) {
   //WiFiClientSecure *client = new WiFiClientSecure();
   //client.stop();
   client->setInsecure();
+  client->setTimeout(5000);
 
   if (!client->connect("api.wigle.net", 443)) {
     fileToUpload.close();
@@ -2032,6 +2033,7 @@ bool WiFiOps::wigleUpload(String filePath) {
 
   client->print(part2);
   client->print(part3);
+  client->flush();
 
   Serial.println("Finished sending part2 and part3");
 
@@ -2046,6 +2048,8 @@ bool WiFiOps::wigleUpload(String filePath) {
       char c = client->read();
       response += c;
     }
+
+    delay(10);
   }
 
   if (millis() - timeout > 5000)
@@ -2132,6 +2136,8 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
   Logger::log(STD_MSG, "[WDG] Total length: " + String(totalLength));
 
   client->setInsecure();
+  client->setTimeout(5000);
+
   if (!client->connect("wdgwars.pl", 443)) {
     fileToUpload.close();
     client->stop();
@@ -2174,6 +2180,7 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
   }
 
   client->print(part2);
+  client->flush();
   fileToUpload.close();
 
   Logger::log(STD_MSG, "[WDG] Bytes sent: " + String(totalSent));
@@ -2188,6 +2195,8 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
     }
     if (!client->connected() && !client->available())
       break;
+
+    delay(10);
   }
   client->stop();
 
