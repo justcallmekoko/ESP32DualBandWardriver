@@ -18,6 +18,7 @@ BatteryInterface battery;
 WiFiOps wifi_ops;
 Utils utils;
 UI ui_obj;
+bool g_force_display_redraw = false;
 
 SPIClass sharedSPI(SPI);
 Display display = Display(&sharedSPI, TFT_CS, TFT_DC, TFT_RST);
@@ -74,6 +75,9 @@ void setup() {
   Logger::log(STD_MSG, "Checking for firmware updates...");
   sd_obj.runUpdate();
 
+  // Enable SD debug logging if setting is on
+  Logger::enableSDLog(settings.loadSetting<bool>(DEBUG_LOG_NAME));
+
   // Init battery
   battery.RunSetup();
   battery.battery_level = battery.getBatteryLevel();
@@ -99,7 +103,7 @@ void loop() {
   uint32_t currentTime = millis();
 
   // Refresh all functions
-  wifi_ops.main(currentTime);
+  wifi_ops.main(currentTime, ui_obj.stat_display_mode == SD_FILES);
   settings.main(currentTime);
   battery.main(currentTime);
   gps.main();

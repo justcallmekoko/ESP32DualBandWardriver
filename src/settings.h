@@ -24,11 +24,17 @@
 #define MED_SENS   2
 #define HIGH_SENS  3
 
-/*#ifdef HAS_SCREEN
-  #include "Display.h"
-
-  extern Display display_obj;
-#endif*/
+// ============================================================
+// Chunk 1: New setting key names
+// ============================================================
+#define WDG_KEY_NAME       "wdg_key"   // WDG Wars API key (String)
+#define TRIGGER_SSID_NAME  "t_ssid"    // Dock trigger SSID e.g. "K1T" (String)
+#define TRIGGER_PASS_NAME  "t_pass"    // Dock trigger SSID password (String)
+#define ADMIN_PASS_NAME    "a_pass"    // Basic Auth password for web UI (String)
+#define DEBUG_LOG_NAME     "dbg_en"    // SD debug log enabled (bool)
+// SSID exclusion list keys:  "sx_0" through "sx_9"   (String each)
+// Geofence keys:             "geo_0" through "geo_4" (String, JSON encoded)
+// Geofence JSON format: {"lat":0.000000,"lon":0.000000,"rad":0,"label":""}
 
 class Settings {
 
@@ -60,18 +66,6 @@ class Settings {
     String getSettingType(String key);
     String setting_index_to_name(int i);
     int getNumberSettings();
-
-    //template<>
-    //int loadSetting<int>(String key);
-    
-    //template<>
-    //String loadSetting<String>(String key);
-    
-    //template<>
-    //bool loadSetting<bool>(String key);
-    
-    //template<>
-    //uint8_t loadSetting<uint8_t>(String key);
 
     String getSettingsString();
     bool createDefaultSettings(fs::FS &fs, bool spec = false, uint8_t index = 0, String typeStr = "bool", String name = "");
