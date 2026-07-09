@@ -15,6 +15,10 @@
 #include "logger.h"
 #include <Update.h>
 
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_err.h"
+
 extern Buffer buffer;
 extern Settings settings;
 extern Display display;
@@ -52,7 +56,7 @@ class SDInterface {
     void listDirToLinkedList(LinkedList<String>* file_names, String str_dir = "/", String ext = "");
     File getFile(String path);
     void runUpdate();
-    void performUpdate(Stream &updateSource, size_t updateSize);
+    bool performUpdate(Stream &updateSource, size_t updateSize);
     void main();
     bool removeFile(String file_path);
 };

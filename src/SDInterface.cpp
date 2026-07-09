@@ -156,6 +156,9 @@ String SDInterface::findFirstBinFile(const String& dirPath) {
 }
 
 void SDInterface::runUpdate() {
+  const esp_partition_t *check_running = esp_ota_get_running_partition();
+  Logger::log(STD_MSG, "Running partition: " + String(check_running->label));
+
   String bin_name = this->findFirstBinFile("/");
 
   if (bin_name == "") {
@@ -174,10 +177,11 @@ void SDInterface::runUpdate() {
     display.tft->println(bin_name);
     Logger::log(WARN_MSG, "Found new bin file (" + bin_name + "). Updating...");
     this->update_bin_file = bin_name;
-    settings.saveSetting<bool>(UPDATE_KEY, this->update_bin_file);
   }
 
   File updateBin = SD.open("/" + bin_name);
+
+  bool update_succeed = false;
 
   // Check if file is good
   if (updateBin) {
@@ -193,7 +197,8 @@ void SDInterface::runUpdate() {
     // Check file size
     if (updateSize > 0) {
       Logger::log(STD_MSG, "Starting update over SD. Please wait...");
-      this->performUpdate(updateBin, updateSize);
+      if (this->performUpdate(updateBin, updateSize))
+        update_succeed = true;
     }
     // File is empty
     else {
@@ -203,12 +208,30 @@ void SDInterface::runUpdate() {
     }
 
     updateBin.close();
+
+    if (update_succeed) {
+      settings.saveSetting<bool>(UPDATE_KEY, this->update_bin_file);
     
-    // whe finished remove the binary from sd card to indicate end of the process
-    Logger::log(STD_MSG, "rebooting...");
-    display.tft->println("Complete. Rebooting...");
-    delay(1000);
-    ESP.restart();
+      // whe finished remove the binary from sd card to indicate end of the process
+
+      const esp_partition_t *running = esp_ota_get_running_partition();
+
+      const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
+
+      esp_err_t result = esp_ota_set_boot_partition(next);
+
+      if (result != ESP_OK) {
+        Logger::log(WARN_MSG, "Failed to set boot partition: " + String(esp_err_to_name(result)));
+        return;
+      }
+
+      Logger::log(STD_MSG, "Next boot partition: " + String(next->label));
+
+      Logger::log(STD_MSG, "rebooting...");
+      display.tft->println("Complete. Rebooting...");
+      delay(1000);
+      ESP.restart();
+    }
   }
   // File was not good
   else {
@@ -218,7 +241,7 @@ void SDInterface::runUpdate() {
   }
 }
 
-void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
+bool SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
   if (Update.begin(updateSize)) {
     size_t written = Update.writeStream(updateSource);
     if (written == updateSize) {
@@ -231,6 +254,7 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
       Logger::log(STD_MSG, "OTA done!");
       if (Update.isFinished()) {
         Logger::log(STD_MSG, "Update successfully completed. Rebooting.");
+        return true;
       }
       else {
         Logger::log(WARN_MSG, "Update not finished? Something went wrong!");
@@ -248,6 +272,8 @@ void SDInterface::performUpdate(Stream &updateSource, size_t updateSize) {
     Logger::log(WARN_MSG, "Not enough space to begin OTA");
     display.tft->println("Update error occurred");
   }
+
+  return false;
 }
 
 bool SDInterface::checkDetectPin() {

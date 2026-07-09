@@ -391,7 +391,7 @@ void UI::drawStatsNew(uint32_t currentTime, uint32_t count2g4, uint32_t count5g,
     display.tft->setTextColor(ST77XX_GREEN, ST77XX_BLACK);
     display.tft->print(String(gpsSats) + " sats  ");
   } else {
-    display.tft->setTextColor(ST77XX_RED, ST77XX_BLACK);
+    display.tft->setTextColor(ST77XX_BLUE, ST77XX_BLACK);
     display.tft->print("No GPS fix  ");
   }
 
