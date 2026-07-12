@@ -2820,10 +2820,34 @@ bool WiFiOps::begin(bool skip_admin) {
       this->startAccessPoint();
     }
 
-    /*if (connected) {
-      Logger::log(STD_MSG, "Attempting upload...");
-      this->backendUpload("/wardrive_0.log");
-    }*/
+    // Boot-time dock upload (opt-in: only when a dock trigger SSID is configured).
+    // Add: When docking is enabled, and we connect as a client, sync all pending logs
+    // first, then fall through to the existing config manager.
+    if (connected) {
+      String boot_dock_ssid = settings.loadSetting<String>(TRIGGER_SSID_NAME);
+      if (!boot_dock_ssid.isEmpty()) {
+        Logger::log(STD_MSG, "[DOCK] Boot dock — uploading pending logs before config");
+        display.clearScreen();
+        display.tft->setCursor(0, 0);
+        display.tft->setTextSize(2);
+        display.tft->setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+        display.tft->println("UPLOADING");
+        display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+        display.tft->setTextSize(1);
+        display.tft->println("Syncing pending logs...");
+        this->uploadAllPending();
+        Logger::log(GUD_MSG, "[DOCK] Boot dock upload complete");
+
+        // Restore the connect/IP screen after we sync logs.
+        display.clearScreen();
+        display.tft->setCursor(0, 0);
+        display.tft->setTextSize(1);
+        display.tft->print("Connected: ");
+        display.tft->println(this->user_ap_ssid);
+        display.tft->print("IP: ");
+        display.tft->println(WiFi.localIP());
+      }
+    }
 
     this->serveConfigPage();
 
