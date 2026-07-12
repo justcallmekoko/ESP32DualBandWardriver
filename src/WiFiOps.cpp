@@ -1796,38 +1796,30 @@ void WiFiOps::deinitWiFi() {
 }
 
 void WiFiOps::deinitBLE() {
-  if (!ble_initialized) {
-    Logger::log(STD_MSG, "BLE already deinitialized, skipping");
-    return;
-  }
-  ble_initialized = false;
-  Logger::log(STD_MSG, "Deinitializing BLE...");   // existing line continues here
-
-  if (pBLEScan != nullptr) {
-    if (pBLEScan->isScanning()) {
-      Logger::log(STD_MSG, "Stopping ongoing BLE scan...");
-      pBLEScan->stop();
-      while (pBLEScan->isScanning()) {
-        delay(10);
-        esp_task_wdt_reset(); // feed watchdog — BLE stop can take several seconds
-      }
+  // Dock-mode crash fix (ESP32-C5 + NimBLE 2.3.0).
+  // This is called only from the dock path, when a dock is triggered mid-wardrive.
+  // Full BLE stack teardown is unnecessary, and was causing C5 to crash.
+  // We only STOP the scan to free the radio for the STA connection/upload.
+  // Stack stays alive and wardriving scanBLE() restarts scanning after the dock undocks.
+  if (pBLEScan != nullptr && pBLEScan->isScanning()) {
+    Logger::log(STD_MSG, "Stopping BLE scan for dock...");
+    pBLEScan->stop();
+    unsigned long start = millis();
+    while (pBLEScan->isScanning() && millis() - start < 3000) {
+      delay(10);
+      esp_task_wdt_reset(); // feed watchdog — BLE stop can take a bit of time
     }
-
-    // Clear results to release internal memory
-    Logger::log(STD_MSG, "Clearing scan results...");
     pBLEScan->clearResults();
-
-    // Delete scan callbacks if dynamically allocated
-    Logger::log(STD_MSG, "Releasing scan callbacks...");
-    pBLEScan->setScanCallbacks(nullptr);
   }
-
-  // Now safe to deinit BLE
-  NimBLEDevice::deinit();
-  Logger::log(STD_MSG, "Finished deinitializing BLE");
+  Logger::log(STD_MSG, "BLE scan stopped (stack kept initialized)");
 }
 
 void WiFiOps::initBLE() {
+  // The dock path no longer fully tears down BLE (see deinitBLE), so the
+  // stack can still be up when departDock() calls this to resume wardriving.
+  // no-op if BLE is already initialized.
+  if (ble_initialized) return;
+
   NimBLEDevice::init("");
   //delete pBLEScan;
   pBLEScan = NimBLEDevice::getScan();
