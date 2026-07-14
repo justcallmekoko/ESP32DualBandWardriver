@@ -1870,6 +1870,7 @@ bool WiFiOps::tryConnectToWiFi(unsigned long timeoutMs) {
   // Wait while we connect
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    esp_task_wdt_reset();
     delay(500);
     Serial.print(".");
   }
@@ -2016,6 +2017,7 @@ bool WiFiOps::wigleUpload(String filePath) {
 
   size_t totalBytesSent = 0;
   while (fileToUpload.available()) {
+    esp_task_wdt_reset();
     size_t bytesRead = fileToUpload.read(buffer, BUFFER_SIZE);
     totalBytesSent += bytesRead;
     Serial.print("Writing ");
@@ -2044,6 +2046,7 @@ bool WiFiOps::wigleUpload(String filePath) {
   String response;
   unsigned long timeout = millis();
   while (millis() - timeout < 5000) {
+    esp_task_wdt_reset();
     while (client->available()) {
       char c = client->read();
       response += c;
@@ -2168,6 +2171,7 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
   String pctStr;
 
   while (fileToUpload.available()) {
+    esp_task_wdt_reset();
     size_t n = fileToUpload.read(buf, CHUNK);
     totalSent += n;
     client->write(buf, n);
@@ -2189,6 +2193,7 @@ bool WiFiOps::wdgwarsUpload(String filePath) {
   String response;
   unsigned long t = millis();
   while (millis() - t < 5000) {
+    esp_task_wdt_reset();
     while (client->available()) {
       char c = client->read();
       response += c;
@@ -3015,6 +3020,7 @@ void WiFiOps::handleDockConnecting() {
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED &&
          millis() - start < DOCK_CONNECT_TIMEOUT) {
+    esp_task_wdt_reset();
     delay(500);
   }
 
