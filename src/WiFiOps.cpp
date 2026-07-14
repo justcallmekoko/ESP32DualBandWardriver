@@ -958,8 +958,6 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
           utils.convertMacStringToUint8(rec.bssid, bssid);
 
           if (!wifi_ops.seen_mac(bssid)) {
-            wifi_ops.save_mac(bssid);
-
             String type = "WIFI";
             if (rec.type == "B")
               type = "BLE";
@@ -980,6 +978,10 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
             Logger::log(GUD_MSG, wardrive_line);
 
             if (gps.getFixStatus()) {
+              // Mark the MAC as logged only once we have a fix and
+              // write the record.
+              wifi_ops.save_mac(bssid);
+
               if (type == "WIFI") {
                 wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
                 wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
