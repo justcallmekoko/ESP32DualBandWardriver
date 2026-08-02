@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "sourceWorkflow": ".github/workflows/wardriver_build_parallel.yml",
+  "targets": [
+    {
+      "id": "jcmk-c5-wardriver",
+      "displayName": "JCMK C5 Wardriver",
+      "aliases": ["C5 Wardriver"],
+      "buildFlag": "C5_WARDRIVER",
+      "assetSuffix": "esp32c5devkitc1",
+      "chipFamily": "ESP32-C5",
+      "esptoolChip": "esp32c5"
+    }
+  ]
+}
