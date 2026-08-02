@@ -54,6 +54,7 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
+          export PATH="$PATH:$GITHUB_WORKSPACE/bin"
           arduino-cli core update-index
           arduino-cli core install esp32:esp32@3.3.0
       - name: Install firmware build dependencies
