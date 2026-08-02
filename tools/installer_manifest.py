@@ -120,7 +120,12 @@ def parse_flash_args(build_dir: Path) -> tuple[dict, list[tuple[int, Path]]]:
     for index, value in enumerate(tokens[:-1]):
         if OFFSET.fullmatch(value):
             path = (build_dir / tokens[index + 1]).resolve()
-            if not path.is_relative_to(build_root):
+            is_core_ota_seed = (
+                path.name == "boot_app0.bin"
+                and path.parent.name == "partitions"
+                and path.parent.parent.name == "tools"
+            )
+            if not path.is_relative_to(build_root) and not is_core_ota_seed:
                 raise ManifestError(f"flash segment escapes build directory: {path}")
             if not path.is_file(): raise ManifestError(f"flash segment missing: {path}")
             segments.append((int(value, 16), path))

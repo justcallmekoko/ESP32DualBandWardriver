@@ -80,6 +80,26 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ManifestError, "escapes build directory"):
                 parse_flash_args(build)
 
+    def test_allows_arduino_core_ota_seed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build = root / "build"
+            core_partitions = root / "core" / "tools" / "partitions"
+            build.mkdir()
+            core_partitions.mkdir(parents=True)
+            ota_seed = core_partitions / "boot_app0.bin"
+            ota_seed.write_bytes(b"ota")
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "arduino-build-properties.txt").write_text(
+                "build.flash_mode=dio\n"
+                "build.flash_freq=80m\n"
+                "build.flash_size=8MB\n"
+                f"tools.esptool_py.upload.pattern_args=0xe000 {ota_seed} "
+                "0x10000 src.ino.bin\n"
+            )
+            _, segments = parse_flash_args(build)
+            self.assertEqual([path.name for _, path in segments], ["boot_app0.bin", "src.ino.bin"])
+
     def test_refuses_overlapping_segments(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
