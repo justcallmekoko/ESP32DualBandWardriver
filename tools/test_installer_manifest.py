@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from tools.installer_manifest import ManifestError, generate, registry
+from tools.installer_manifest import ManifestError, generate, parse_flash_args, registry
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,6 +30,65 @@ class ManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); build = root / "build"; build.mkdir()
             with self.assertRaisesRegex(ManifestError, "missing Arduino flash_args"):
+                generate(self.args(root, build))
+
+    def test_refuses_flash_args_without_required_options(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build = Path(temp)
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "flash_args").write_text("0x10000 src.ino.bin\n")
+            with self.assertRaisesRegex(ManifestError, "flash_args lacks --flash_mode"):
+                parse_flash_args(build)
+
+    def test_refuses_duplicate_segment_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build = Path(temp)
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "flash_args").write_text(
+                "--flash_mode dio --flash_freq 80m --flash_size 8MB "
+                "0x10000 src.ino.bin 0x20000 src.ino.bin\n"
+            )
+            with self.assertRaisesRegex(ManifestError, "segment more than once"):
+                parse_flash_args(build)
+
+    def test_refuses_segment_outside_build_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build = root / "build"
+            build.mkdir()
+            (root / "src.ino.bin").write_bytes(b"app")
+            (build / "flash_args").write_text(
+                "--flash_mode dio --flash_freq 80m --flash_size 8MB "
+                "0x10000 ../src.ino.bin\n"
+            )
+            with self.assertRaisesRegex(ManifestError, "escapes build directory"):
+                parse_flash_args(build)
+
+    def test_refuses_overlapping_segments(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build = root / "build"
+            build.mkdir()
+            (build / "bootloader.bin").write_bytes(b"b" * 32)
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "flash_args").write_text(
+                "--flash_mode dio --flash_freq 80m --flash_size 8MB "
+                "0x1000 bootloader.bin 0x1010 src.ino.bin\n"
+            )
+            with self.assertRaisesRegex(ManifestError, "segments overlap"):
+                generate(self.args(root, build))
+
+    def test_refuses_out_of_range_segment(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build = root / "build"
+            build.mkdir()
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "flash_args").write_text(
+                "--flash_mode dio --flash_freq 80m --flash_size 8MB "
+                "0x800000 src.ino.bin\n"
+            )
+            with self.assertRaisesRegex(ManifestError, "exceeds flash size"):
                 generate(self.args(root, build))
 
 if __name__ == "__main__": unittest.main()

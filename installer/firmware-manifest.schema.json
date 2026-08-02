@@ -1,8 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/justcallmekoko/ESP32DualBandWardriver/main/installer/firmware-manifest.schema.json",
   "title": "ESP32 C5 Wardriver installer release manifest",
   "type": "object",
-  "required": ["$schema", "schemaVersion", "kind", "metadataStatus", "sourceRepository", "sourceCommit", "channel", "version", "targets"],
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "kind",
+    "metadataStatus",
+    "sourceRepository",
+    "sourceCommit",
+    "channel",
+    "version",
+    "targets"
+  ],
   "properties": {
     "$schema": { "type": "string", "format": "uri" },
     "schemaVersion": { "const": 1 },
@@ -12,7 +23,97 @@
     "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
     "channel": { "const": "stable" },
     "version": { "type": "string", "pattern": "^v[0-9A-Za-z._-]+$" },
-    "targets": { "type": "array", "minItems": 1 }
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/target" }
+    }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "required": ["role", "offset", "size", "sha256", "fileName"],
+      "properties": {
+        "role": {
+          "enum": ["bootloader", "partition-table", "ota-data", "application", "auxiliary"]
+        },
+        "offset": { "type": "integer", "minimum": 0 },
+        "size": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "fileName": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+      },
+      "additionalProperties": false
+    },
+    "updatePlan": {
+      "type": "object",
+      "required": ["erase", "preservesUserData", "segments"],
+      "properties": {
+        "erase": { "const": false },
+        "preservesUserData": { "const": true },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/segment" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "factoryPlan": {
+      "type": "object",
+      "required": ["erase", "preservesUserData", "segments"],
+      "properties": {
+        "erase": { "const": true },
+        "preservesUserData": { "const": false },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/segment" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "id",
+        "displayName",
+        "aliases",
+        "buildFlag",
+        "assetSuffix",
+        "chipFamily",
+        "esptoolChip",
+        "flash"
+      ],
+      "properties": {
+        "id": { "const": "jcmk-c5-wardriver" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "buildFlag": { "const": "C5_WARDRIVER" },
+        "assetSuffix": { "const": "esp32c5devkitc1" },
+        "chipFamily": { "const": "ESP32-C5" },
+        "esptoolChip": { "const": "esp32c5" },
+        "flash": {
+          "type": "object",
+          "required": ["sizeBytes", "mode", "frequency", "update", "factory"],
+          "properties": {
+            "sizeBytes": { "type": "integer", "minimum": 1 },
+            "mode": { "enum": ["dio", "dout", "qio", "qout"] },
+            "frequency": { "enum": ["20m", "26m", "40m", "80m"] },
+            "update": { "$ref": "#/$defs/updatePlan" },
+            "factory": { "$ref": "#/$defs/factoryPlan" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build_installer_manifest.yml"
+      - ".github/workflows/wardriver_build_parallel.yml"
       - "installer/**"
       - "tools/installer_manifest.py"
       - "tools/test_installer_manifest.py"
@@ -26,7 +27,7 @@ jobs:
     if: ${{ github.event_name != 'release' || github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
       - run: python3 tools/installer_manifest.py --validate-registry
@@ -35,18 +36,19 @@ jobs:
   build:
     name: Rebuild authoritative C5 release bundle
     needs: validate
-    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
       - name: Record source commit and validate release version
         run: |
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           VERSION=$(sed -nE 's/^#define FIRMWARE_VERSION "(v[^"]+)"/\1/p' src/configs.h)
           test -n "$VERSION"
-          test "$VERSION" = "${{ github.event.release.tag_name }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            test "$VERSION" = "${{ github.event.release.tag_name }}"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Install Arduino CLI and ESP32 core
         run: |
@@ -55,37 +57,66 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32@3.3.0
       - name: Install firmware build dependencies
-        uses: actions/checkout@v4
-        with: { repository: me-no-dev/AsyncTCP, ref: master, path: CustomAsyncTCP }
-      - uses: actions/checkout@v4
-        with: { repository: stevemarple/MicroNMEA, ref: v2.0.6, path: CustomMicroNMEA }
-      - uses: actions/checkout@v4
-        with: { repository: h2zero/NimBLE-Arduino, ref: 2.3.0, path: CustomNimBLE-Arduino }
-      - uses: actions/checkout@v4
-        with: { repository: bblanchon/ArduinoJson, ref: v6.18.2, path: CustomArduinoJson }
-      - uses: actions/checkout@v4
-        with: { repository: ivanseidel/LinkedList, ref: v1.3.3, path: CustomLinkedList }
-      - uses: actions/checkout@v4
-        with: { repository: plerup/espsoftwareserial, ref: 8.1.0, path: CustomEspSoftwareSerial }
-      - uses: actions/checkout@v4
-        with: { repository: adafruit/Adafruit_BusIO, ref: 1.15.0, path: CustomAdafruit_BusIO }
-      - uses: actions/checkout@v4
-        with: { repository: adafruit/Adafruit_MAX1704X, ref: 1.0.2, path: CustomAdafruit_MAX1704X }
-      - uses: actions/checkout@v4
-        with: { repository: adafruit/Adafruit-GFX-Library, ref: 1.12.1, path: CustomAdafruit_GFX }
-      - uses: actions/checkout@v4
-        with: { repository: adafruit/Adafruit-ST7735-Library, ref: 1.11.0, path: CustomAdafruit_ST7735 }
-      - uses: actions/checkout@v4
-        with: { repository: adafruit/Adafruit_Seesaw, ref: 1.7.0, path: CustomAdafruit_Seesaw }
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: stevemarple/MicroNMEA
+          ref: v2.0.6
+          path: build-libraries/CustomMicroNMEA
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: h2zero/NimBLE-Arduino
+          ref: 2.3.0
+          path: build-libraries/CustomNimBLE-Arduino
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: v6.18.2
+          path: build-libraries/CustomArduinoJson
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ivanseidel/LinkedList
+          ref: v1.3.3
+          path: build-libraries/CustomLinkedList
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: plerup/espsoftwareserial
+          ref: 8.1.0
+          path: build-libraries/CustomEspSoftwareSerial
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: adafruit/Adafruit_BusIO
+          ref: 1.15.0
+          path: build-libraries/CustomAdafruit_BusIO
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: adafruit/Adafruit_MAX1704X
+          ref: 1.0.2
+          path: build-libraries/CustomAdafruit_MAX1704X
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: adafruit/Adafruit-GFX-Library
+          ref: 1.12.1
+          path: build-libraries/CustomAdafruit_GFX
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: adafruit/Adafruit-ST7735-Library
+          ref: 1.11.0
+          path: build-libraries/CustomAdafruit_ST7735
       - name: Apply ESP32-C5 compatibility flags
         run: |
           find "$HOME/.arduino15/packages/esp32/hardware/esp32" -name platform.txt -exec sed -i 's/compiler.c.elf.extra_flags=/compiler.c.elf.extra_flags=-Wl,-zmuldefs /' {} +
       - name: Build from tagged source and generate metadata
         run: |
           BUILD_DIR="$GITHUB_WORKSPACE/build/esp32c5"
-          arduino-cli compile --fqbn "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled" --build-path "$BUILD_DIR" --build-property "compiler.cpp.extra_flags=-DC5_WARDRIVER" ./src
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled" \
+            --build-path "$BUILD_DIR" \
+            --libraries "$GITHUB_WORKSPACE/build-libraries" \
+            --warnings none \
+            --build-property "compiler.cpp.extra_flags=-DC5_WARDRIVER" \
+            ./src
           python3 tools/installer_manifest.py --build-flag C5_WARDRIVER --build-dir "$BUILD_DIR" --version "$VERSION" --release-date "$(date -u +%Y%m%d)" --source-commit "$SOURCE_COMMIT" --output-dir release-assets
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: c5-installer-release-bundle
           path: release-assets
@@ -100,12 +131,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with: { name: c5-installer-release-bundle, path: release-assets }
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.release.tag_name }}
-          fail_on_unmatched_files: true
-          files: |
-            release-assets/*.bin
-            release-assets/firmware-manifest.json
+      - name: Attach additive installer assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            release-assets/*.bin \
+            release-assets/firmware-manifest.json \
+            --repo "$GITHUB_REPOSITORY"

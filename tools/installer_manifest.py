@@ -15,6 +15,9 @@ SOURCE_REPOSITORY = "justcallmekoko/ESP32DualBandWardriver"
 TARGET_FIELDS = {"id", "displayName", "aliases", "buildFlag", "assetSuffix", "chipFamily", "esptoolChip"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 OFFSET = re.compile(r"^0x[0-9a-fA-F]+$")
+IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+BUILD_FLAG = re.compile(r"^[A-Z0-9_]+$")
+ASSET_SUFFIX = re.compile(r"^[A-Za-z0-9_]+$")
 
 class ManifestError(RuntimeError):
     pass
@@ -37,6 +40,21 @@ def registry(path: Path) -> dict:
     target = targets[0]
     if not isinstance(target, dict) or set(target) != TARGET_FIELDS:
         raise ManifestError("registry target fields are invalid")
+    if not IDENTIFIER.fullmatch(target["id"]):
+        raise ManifestError("registry target id is invalid")
+    if not isinstance(target["displayName"], str) or not target["displayName"].strip():
+        raise ManifestError("registry display name is invalid")
+    if (
+        not isinstance(target["aliases"], list)
+        or not target["aliases"]
+        or any(not isinstance(alias, str) or not alias.strip() for alias in target["aliases"])
+        or len(set(target["aliases"])) != len(target["aliases"])
+    ):
+        raise ManifestError("registry aliases are invalid")
+    if not BUILD_FLAG.fullmatch(target["buildFlag"]):
+        raise ManifestError("registry build flag is invalid")
+    if not ASSET_SUFFIX.fullmatch(target["assetSuffix"]):
+        raise ManifestError("registry asset suffix is invalid")
     if target["buildFlag"] != "C5_WARDRIVER" or target["chipFamily"] != "ESP32-C5" or target["esptoolChip"] != "esp32c5":
         raise ManifestError("registry is not a C5 Wardriver target")
     return target
@@ -50,6 +68,7 @@ def role(path: Path) -> str:
     return "auxiliary"
 
 def parse_flash_args(build_dir: Path) -> tuple[dict, list[tuple[int, Path]]]:
+    build_root = build_dir.resolve()
     flash_args = build_dir / "flash_args"
     if not flash_args.is_file():
         raise ManifestError("missing Arduino flash_args; refusing to guess flash geometry")
@@ -62,10 +81,14 @@ def parse_flash_args(build_dir: Path) -> tuple[dict, list[tuple[int, Path]]]:
     for index, value in enumerate(tokens[:-1]):
         if OFFSET.fullmatch(value):
             path = (build_dir / tokens[index + 1]).resolve()
+            if not path.is_relative_to(build_root):
+                raise ManifestError(f"flash segment escapes build directory: {path}")
             if not path.is_file(): raise ManifestError(f"flash segment missing: {path}")
             segments.append((int(value, 16), path))
     if not segments or len({offset for offset, _ in segments}) != len(segments):
         raise ManifestError("flash_args has no segments or duplicate offsets")
+    if len({path for _, path in segments}) != len(segments):
+        raise ManifestError("flash_args references a segment more than once")
     if sum(role(path) == "application" for _, path in segments) != 1:
         raise ManifestError("flash_args must declare exactly one application image")
     return options, sorted(segments)
