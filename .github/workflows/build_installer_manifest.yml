@@ -116,6 +116,14 @@ jobs:
             --warnings none \
             --build-property "compiler.cpp.extra_flags=-DC5_WARDRIVER" \
             ./src
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled" \
+            --build-path "$BUILD_DIR" \
+            --libraries "$GITHUB_WORKSPACE/build-libraries" \
+            --warnings none \
+            --build-property "compiler.cpp.extra_flags=-DC5_WARDRIVER" \
+            --show-properties=expanded \
+            ./src > "$BUILD_DIR/arduino-build-properties.txt"
           python3 tools/installer_manifest.py --build-flag C5_WARDRIVER --build-dir "$BUILD_DIR" --version "$VERSION" --release-date "$(date -u +%Y%m%d)" --source-commit "$SOURCE_COMMIT" --output-dir release-assets
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

@@ -29,8 +29,24 @@ class ManifestTests(unittest.TestCase):
     def test_refuses_missing_flash_args(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); build = root / "build"; build.mkdir()
-            with self.assertRaisesRegex(ManifestError, "missing Arduino flash_args"):
+            with self.assertRaisesRegex(ManifestError, "missing Arduino build properties or flash_args"):
                 generate(self.args(root, build))
+
+    def test_reads_expanded_arduino_upload_properties(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build = Path(temp)
+            (build / "bootloader.bin").write_bytes(b"boot")
+            (build / "src.ino.bin").write_bytes(b"app")
+            (build / "arduino-build-properties.txt").write_text(
+                "build.flash_mode=dio\n"
+                "build.flash_freq=80m\n"
+                "build.flash_size=8MB\n"
+                "tools.esptool_py.upload.pattern_args=--chip esp32c5 "
+                "0x2000 bootloader.bin 0x10000 src.ino.bin\n"
+            )
+            options, segments = parse_flash_args(build)
+            self.assertEqual(options["--flash_size"], "8MB")
+            self.assertEqual([offset for offset, _ in segments], [0x2000, 0x10000])
 
     def test_refuses_flash_args_without_required_options(self):
         with tempfile.TemporaryDirectory() as temp:

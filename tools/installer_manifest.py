@@ -69,14 +69,53 @@ def role(path: Path) -> str:
 
 def parse_flash_args(build_dir: Path) -> tuple[dict, list[tuple[int, Path]]]:
     build_root = build_dir.resolve()
-    flash_args = build_dir / "flash_args"
-    if not flash_args.is_file():
-        raise ManifestError("missing Arduino flash_args; refusing to guess flash geometry")
-    tokens = shlex.split(flash_args.read_text(encoding="utf-8"))
-    options = {}
-    for key in ("--flash_mode", "--flash_freq", "--flash_size"):
-        try: options[key] = tokens[tokens.index(key) + 1]
-        except (ValueError, IndexError) as error: raise ManifestError(f"flash_args lacks {key}") from error
+    properties_path = build_dir / "arduino-build-properties.txt"
+    if properties_path.is_file():
+        properties = {}
+        for line in properties_path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                properties[key] = value
+        try:
+            tokens = shlex.split(properties["tools.esptool_py.upload.pattern_args"])
+            options = {
+                "--flash_mode": properties["build.flash_mode"],
+                "--flash_freq": properties["build.flash_freq"],
+                "--flash_size": properties["build.flash_size"],
+            }
+        except KeyError as error:
+            raise ManifestError(
+                f"Arduino build properties lack {error.args[0]}"
+            ) from error
+        source_description = "Arduino build properties"
+    else:
+        flash_args = next(
+            (
+                candidate
+                for candidate in (build_dir / "flash_args", build_dir / "flash_args.txt")
+                if candidate.is_file()
+            ),
+            None,
+        )
+        if flash_args is None:
+            raise ManifestError(
+                "missing Arduino build properties or flash_args; refusing to guess flash geometry"
+            )
+        tokens = shlex.split(flash_args.read_text(encoding="utf-8"))
+        options = {}
+        for normalized, spellings in (
+            ("--flash_mode", ("--flash_mode", "--flash-mode")),
+            ("--flash_freq", ("--flash_freq", "--flash-freq")),
+            ("--flash_size", ("--flash_size", "--flash-size")),
+        ):
+            option = next((spelling for spelling in spellings if spelling in tokens), None)
+            try:
+                if option is None:
+                    raise ValueError
+                options[normalized] = tokens[tokens.index(option) + 1]
+            except (ValueError, IndexError) as error:
+                raise ManifestError(f"flash_args lacks {normalized}") from error
+        source_description = "flash_args"
     segments = []
     for index, value in enumerate(tokens[:-1]):
         if OFFSET.fullmatch(value):
@@ -86,7 +125,7 @@ def parse_flash_args(build_dir: Path) -> tuple[dict, list[tuple[int, Path]]]:
             if not path.is_file(): raise ManifestError(f"flash segment missing: {path}")
             segments.append((int(value, 16), path))
     if not segments or len({offset for offset, _ in segments}) != len(segments):
-        raise ManifestError("flash_args has no segments or duplicate offsets")
+        raise ManifestError(f"{source_description} has no segments or duplicate offsets")
     if len({path for _, path in segments}) != len(segments):
         raise ManifestError("flash_args references a segment more than once")
     if sum(role(path) == "application" for _, path in segments) != 1:
