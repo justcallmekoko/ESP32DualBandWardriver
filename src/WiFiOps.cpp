@@ -2,6 +2,9 @@
 #include "BatteryInterface.h"
 #include "esp_task_wdt.h"
 
+#include <cmath>
+#include <cstdlib>
+
 extern BatteryInterface battery;
 extern bool g_force_display_redraw;
 
@@ -2427,15 +2430,23 @@ void WiFiOps::serveConfigPage() {
         gLabel = geoDoc["label"] | "";
       }
 
+      bool geofenceConfigured = gRad > 0 || gLat != 0.0f || gLon != 0.0f || !gLabel.isEmpty();
+      String gLatValue = geofenceConfigured ? String(gLat, 6) : "";
+      String gLonValue = geofenceConfigured ? String(gLon, 6) : "";
+      String gRadValue = "";
+      if (geofenceConfigured) {
+        float gRadMiles = gRad / 1609.34f;
+        char gRadMilesStr[10];
+        dtostrf(gRadMiles, 4, 2, gRadMilesStr);
+        gRadValue = String(gRadMilesStr);
+      }
+
       html += "<strong>Zone " + String(i + 1) + "</strong><br>";
       html += "&nbsp;&nbsp;Label: <input type=\"text\" name=\"geo_" + String(i) + "_label\" value=\"" + gLabel + "\"> ";
-      float gRadMiles = gRad > 0 ? gRad / 1609.34 : 0.0;
-      char gRadMilesStr[10];
-      dtostrf(gRadMiles, 4, 2, gRadMilesStr);
-      html += "Radius (mi, min 0.10, max 1.00): <input type=\"number\" name=\"geo_" + String(i) + "_rad\" value=\"" + String(gRadMilesStr) + "\" min=\"0.10\" max=\"1.00\" step=\"0.05\" style=\"width:70px\"><br>";
+      html += "Radius (mi, min 0.10, max 1.00): <input type=\"number\" name=\"geo_" + String(i) + "_rad\" value=\"" + gRadValue + "\" min=\"0.10\" max=\"1.00\" step=\"0.05\" style=\"width:70px\"><br>";
 
-      html += "&nbsp;&nbsp;Lat: <input type=\"text\" name=\"geo_" + String(i) + "_lat\" value=\"" + String(gLat, 6) + "\" style=\"width:110px\"> ";
-      html += "Lon: <input type=\"text\" name=\"geo_" + String(i) + "_lon\" value=\"" + String(gLon, 6) + "\" style=\"width:110px\"><br><br>";
+      html += "&nbsp;&nbsp;Lat: <input type=\"text\" name=\"geo_" + String(i) + "_lat\" value=\"" + gLatValue + "\" style=\"width:110px\"> ";
+      html += "Lon: <input type=\"text\" name=\"geo_" + String(i) + "_lon\" value=\"" + gLonValue + "\" style=\"width:110px\"><br><br>";
     }
 
     // ---- Device Mode ----
@@ -2513,6 +2524,38 @@ void WiFiOps::serveConfigPage() {
 
     bool anyChange = false;
 
+    // Validate every geofence before mutating settings. Empty slots are valid,
+    // but once any field is provided the radius must satisfy the documented rule.
+    for (int i = 0; i < MAX_GEOFENCES; i++) {
+      String prefix = "geo_" + String(i);
+      String latValue = server.hasArg(prefix + "_lat") ? server.arg(prefix + "_lat") : "";
+      String lonValue = server.hasArg(prefix + "_lon") ? server.arg(prefix + "_lon") : "";
+      String radValue = server.hasArg(prefix + "_rad") ? server.arg(prefix + "_rad") : "";
+      String labelValue = server.hasArg(prefix + "_label") ? server.arg(prefix + "_label") : "";
+
+      latValue.trim();
+      lonValue.trim();
+      radValue.trim();
+      labelValue.trim();
+
+      bool anyFieldProvided = !latValue.isEmpty() || !lonValue.isEmpty() ||
+                              !radValue.isEmpty() || !labelValue.isEmpty();
+      if (!anyFieldProvided) continue;
+
+      char *end = nullptr;
+      const char *radiusText = radValue.c_str();
+      float radMiles = std::strtof(radiusText, &end);
+      bool validRadius = !radValue.isEmpty() && end != radiusText && *end == '\0' &&
+                         std::isfinite(radMiles) && radMiles >= 0.10f && radMiles <= 1.00f;
+      if (!validRadius) {
+        server.send(400, "text/html",
+          "<html><body><h3>Invalid geofence.</h3>"
+          "<p>Zone " + String(i + 1) + " radius must be between 0.10 and 1.00 miles.</p>"
+          "<a href=\"/\">Back</a></body></html>");
+        return;
+      }
+    }
+
     // Network
     if (server.hasArg("ssid") && server.arg("ssid") != "") {
       this->user_ap_ssid = server.arg("ssid");
@@ -2579,14 +2622,29 @@ void WiFiOps::serveConfigPage() {
       String radKey   = "geo_" + String(i) + "_rad";
       String labelKey = "geo_" + String(i) + "_label";
 
-      if (server.hasArg(latKey)) {
-        float  lat   = server.arg(latKey).toFloat();
-        float  lon   = server.arg(lonKey).toFloat();
-        float radMiles = server.arg(radKey).toFloat();
-        if (radMiles < 0.10) radMiles = 0.10;   // floor at 0.1 mi
-        if (radMiles > 1.00) radMiles = 1.00;   // cap at 1.0 mi
-        int rad = (int)(radMiles * 1609.34);     // convert to meters for storage
+      if (server.hasArg(latKey) || server.hasArg(lonKey) ||
+          server.hasArg(radKey) || server.hasArg(labelKey)) {
+        String latValue = server.arg(latKey);
+        String lonValue = server.arg(lonKey);
+        String radValue = server.arg(radKey);
         String label = server.arg(labelKey);
+
+        String trimmedLat = latValue;
+        String trimmedLon = lonValue;
+        String trimmedRad = radValue;
+        String trimmedLabel = label;
+        trimmedLat.trim();
+        trimmedLon.trim();
+        trimmedRad.trim();
+        trimmedLabel.trim();
+
+        bool anyFieldProvided = !trimmedLat.isEmpty() || !trimmedLon.isEmpty() ||
+                                !trimmedRad.isEmpty() || !trimmedLabel.isEmpty();
+        float lat = anyFieldProvided ? latValue.toFloat() : 0.0f;
+        float lon = anyFieldProvided ? lonValue.toFloat() : 0.0f;
+        float radMiles = anyFieldProvided ? radValue.toFloat() : 0.0f;
+        int rad = (int)(radMiles * 1609.34f); // convert to meters for storage
+        if (!anyFieldProvided) label = "";
 
         DynamicJsonDocument geoDoc(256);
         geoDoc["lat"]   = lat;
