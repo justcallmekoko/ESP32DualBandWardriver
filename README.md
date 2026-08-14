@@ -93,17 +93,14 @@ The User Buttons require pull-down resistors.
 
 The [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) is the default and recommended method for installing firmware. It runs in a Chromium-based browser with Web Serial support, such as Google Chrome or Microsoft Edge.
 
-1. Remove the ESP32-C5 DevKit from the JCMK host board.
-2. Connect the DevKit directly to your computer with a USB data cable.
-3. Open the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/).
-4. Select the desired hardware and firmware version from the catalog.
-5. Leave **Clean / first install** selected for a new device or a device previously running different firmware.
-6. Read and acknowledge the erase warning, then select **Flash firmware** and choose the ESP32-C5 serial device.
-7. Keep the device connected until the installer reports that flashing is complete, then power-cycle it.
+1. Connect the ESP32-C5 DevKit to your computer with a USB data cable.
+2. Open the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/).
+3. Select the desired hardware and firmware version from the catalog.
+4. Leave **Clean / first install** selected for a new device or a device previously running different firmware.
+5. Read and acknowledge the erase warning, then select **Flash firmware** and choose the ESP32-C5 serial device.
+6. Keep the device connected until the installer reports that flashing is complete, then power-cycle it.
 
 **Clean / first install** erases the device and writes the complete compatible flash layout, including the bootloader, partition table, OTA data, and application. This is required when the existing flash layout is unknown or incompatible.
-
-> **Note:** The ESP32-C5 DevKit must be removed from the JCMK host board before flashing. The host board's circuitry prevents the DevKit from enumerating over USB while seated.
 
 ## Update Firmware
 
@@ -111,7 +108,7 @@ The [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstall
 
 Use the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) for normal firmware updates:
 
-1. Remove the ESP32-C5 DevKit from the host board and connect it directly to your computer.
+1. Connect the ESP32-C5 DevKit to your computer with a USB data cable.
 2. Select the desired catalog firmware.
 3. Select **Update / preserve settings** when the device already has a compatible C5 Wardriver flash layout.
 4. Select **Flash firmware**, choose the ESP32-C5 serial device, and wait for completion before power-cycling.
