@@ -13,6 +13,8 @@ Logs are formatted for WiGLE and saved to SD card.
     - [User Buttons](#user-buttons)
 - [Install Firmware](#install-firmware)
 - [Update Firmware](#update-firmware)
+    - [Browser Installer (Recommended)](#browser-installer-recommended)
+    - [SD Card Update](#sd-card-update)
 - [Usage](#usage)
     - [Booting](#booting)
     - [Initial Setup](#initial-setup)
@@ -88,17 +90,37 @@ The User Buttons require pull-down resistors.
 | `GPIO15` | `SELECT` |
 
 ## Install Firmware
-1. Clone this repo
-2. In your workstation CLI, navigate to the `C5_Py_Flasher` directory
-3. With your ESP32-C5 device unplugged, execute `python c5_flasher.py` and allow any missing python packages to install
-4. Once you see `Waiting for ESP32-C5 device to be connected...`, connect your ESP32-C5 device to your PC via USB-C cable
-5. Once you see `Ready to flash these files to ESP32-C5? (y/N):`, enter `y` and allow the firmware to flash
-6. When the `Hardware reset` message appears on the screen, you may disconnect your ESP32-C5 device
+
+The [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) is the default and recommended method for installing firmware. It runs in a Chromium-based browser with Web Serial support, such as Google Chrome or Microsoft Edge.
+
+1. Remove the ESP32-C5 DevKit from the JCMK host board.
+2. Connect the DevKit directly to your computer with a USB data cable.
+3. Open the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/).
+4. Select the desired hardware and firmware version from the catalog.
+5. Leave **Clean / first install** selected for a new device or a device previously running different firmware.
+6. Read and acknowledge the erase warning, then select **Flash firmware** and choose the ESP32-C5 serial device.
+7. Keep the device connected until the installer reports that flashing is complete, then power-cycle it.
+
+**Clean / first install** erases the device and writes the complete compatible flash layout, including the bootloader, partition table, OTA data, and application. This is required when the existing flash layout is unknown or incompatible.
 
 > **Note:** The ESP32-C5 DevKit must be removed from the JCMK host board before flashing. The host board's circuitry prevents the DevKit from enumerating over USB while seated.
 
 ## Update Firmware
-The firmware is designed to check the SD card root at every boot for a new `.bin` file. If a new bin file is found, it automatically executes an update.
+
+### Browser Installer (Recommended)
+
+Use the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) for normal firmware updates:
+
+1. Remove the ESP32-C5 DevKit from the host board and connect it directly to your computer.
+2. Select the desired catalog firmware.
+3. Select **Update / preserve settings** when the device already has a compatible C5 Wardriver flash layout.
+4. Select **Flash firmware**, choose the ESP32-C5 serial device, and wait for completion before power-cycling.
+
+Update mode preserves settings and writes the application to `app0` before updating OTA selection so the new firmware boots. If the device is factory-fresh, has an unknown partition layout, or does not boot after an update, repeat the process with **Clean / first install**.
+
+### SD Card Update
+
+SD card updates remain supported when a browser and direct USB connection are not convenient. The firmware checks the SD card root at every boot for a new `.bin` file and automatically installs it when found.
 
 1. Download the latest firmware from [Releases](../../releases)
 2. Place the `.bin` file on the root of your SD card
