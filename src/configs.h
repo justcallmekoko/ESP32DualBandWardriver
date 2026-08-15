@@ -141,6 +141,7 @@
 ////WiFi stuff
 #define mac_history_len 200
 #define CHANNEL_TIMER 80
+#define SOLO_MAX_DWELL_MODIFIER 3 // busiest measured channel receives 3x base dwell
 #define LOG_ROLL_ENTRIES  10000  // start a new log file after this many entries
 
 

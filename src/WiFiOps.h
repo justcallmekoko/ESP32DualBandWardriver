@@ -137,6 +137,9 @@ class WiFiOps
     uint32_t total_ble_count = 0;
 
     void startNextNodeAssignedScan();
+    void resetSoloDynamicScan();
+    void startNextSoloChannelScan();
+    bool completeSoloChannelScan(uint16_t networks);
     void runAdminWindowAfterScanCycle();
     void debugPrintNodeTable();
     void handleNodeTopologyChange();
