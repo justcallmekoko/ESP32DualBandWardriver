@@ -137,9 +137,9 @@ class WiFiOps
     uint32_t total_ble_count = 0;
 
     void startNextNodeAssignedScan();
-    void resetSoloDynamicScan();
+    void resetSoloYieldScan();
     void startNextSoloChannelScan();
-    bool completeSoloChannelScan(uint16_t networks);
+    void completeSoloChannelScan(uint16_t new_unique_networks);
     void runAdminWindowAfterScanCycle();
     void debugPrintNodeTable();
     void handleNodeTopologyChange();
@@ -159,7 +159,7 @@ class WiFiOps
     bool mac_cmp(struct mac_addr addr1, struct mac_addr addr2);
     void clearMacHistory();
     String security_int_to_string(int security_type);
-    void processWardrive(uint16_t networks);
+    uint16_t processWardrive(uint16_t networks);
     void shutdownAccessPoint(bool ap_active = true);
     bool isSSIDExcluded(const String& ssid, const String* list, int count); // Chunk 4
 

@@ -10,8 +10,8 @@ on:
   pull_request:
 
 jobs:
-  test_dynamic_dwell:
-    name: Test dynamic dwell calculation
+  test_solo_scheduler:
+    name: Test SOLO yield scheduler
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
