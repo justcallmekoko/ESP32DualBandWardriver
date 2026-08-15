@@ -141,10 +141,13 @@
 ////WiFi stuff
 #define mac_history_len 200
 #define CHANNEL_TIMER 80
-#define SOLO_SCAN_MIN_DWELL_MS 20
-#define SOLO_SCAN_MAX_DWELL_MS 60
+#define SOLO_SCAN_MIN_DWELL_MS 80  // conservative probe-response window
+#define SOLO_SCAN_MAX_DWELL_MS 120 // remain longer when an AP responds
 #define SOLO_BONUS_CHANNEL_COUNT 8 // 20% bounded exploitation budget per base sweep
 #define SOLO_BLE_INTERVAL_MS 4000
+#if SOLO_SCAN_MIN_DWELL_MS > SOLO_SCAN_MAX_DWELL_MS
+#error "SOLO active-scan minimum dwell cannot exceed maximum dwell"
+#endif
 #define LOG_ROLL_ENTRIES  10000  // start a new log file after this many entries
 
 
