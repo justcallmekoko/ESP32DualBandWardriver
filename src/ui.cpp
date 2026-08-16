@@ -454,8 +454,14 @@ void UI::drawChannelPopularity(uint32_t currentTime, bool do_now) {
 
   if (peak == 0) {
     display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    display.tft->setCursor(43, 32);
-    display.tft->print("MEASURING...");
+    if (wifi_ops.in_geofence) {
+      display.tft->setCursor(56, 32);
+      display.tft->print("GEOFENCE");
+    }
+    else {
+      display.tft->setCursor(43, 32);
+      display.tft->print("MEASURING...");
+    }
   }
 }
 
