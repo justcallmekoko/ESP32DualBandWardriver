@@ -101,6 +101,7 @@ void UI::begin() {
     display.drawCenteredText("Deleting Logs...");
 
     buffer.setFileName("");
+    this->setupSDFileList();
 
     for (int i = 0; i < sd_obj.sd_files->size(); i++) {
       if (sd_obj.sd_files->get(i).startsWith("wardrive_") || sd_obj.sd_files->get(i).startsWith("wigle-")) {
@@ -130,6 +131,7 @@ void UI::begin() {
     this->current_menu = upload_all_menu.parentMenu;
   });
   this->addNodes(&upload_all_menu, "WiGLE", ST77XX_WHITE, NULL, 0, [this]() {
+    this->setupSDFileList();
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
@@ -152,6 +154,7 @@ void UI::begin() {
     this->current_menu = upload_all_menu.parentMenu;
   });
   this->addNodes(&upload_all_menu, "WDGWars", ST77XX_WHITE, NULL, 0, [this]() {
+    this->setupSDFileList();
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
@@ -174,6 +177,7 @@ void UI::begin() {
     this->current_menu = upload_all_menu.parentMenu;
   });
   this->addNodes(&upload_all_menu, "Both", ST77XX_WHITE, NULL, 0, [this]() {
+    this->setupSDFileList();
     if (wifi_ops.tryConnectToWiFi()) {
       delay(1000);
       for (int i = 0; i < sd_obj.sd_files->size(); i++) {
@@ -356,6 +360,8 @@ void UI::setDisplayMode(uint8_t new_mode) {
   this->last_stat_display_mode = 255;
   this->last_mode_change_ms    = millis();
   this->lastUpdateTime         = 0;
+  if (new_mode == SD_FILES)
+    this->buildSDFileMenu();
   if (new_mode != SD_FILES && new_mode != INCOGNITO)
     display.tft->fillScreen(ST77XX_BLACK);
 }
@@ -589,6 +595,8 @@ void UI::buildSDFileMenu() {
     delete sd_file_menu.list;
     sd_file_menu.list = new LinkedList<MenuNode>();
     sd_file_menu.name = "Logs";
+    sd_file_menu.selected = 0;
+    sd_file_menu.scroll_offset = 0;
 
     this->addNodes(&sd_file_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
       this->setDisplayMode(STATS_NEW);
