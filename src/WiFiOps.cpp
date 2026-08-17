@@ -782,11 +782,31 @@ bool WiFiOps::completeSoloChannelScan(uint16_t networks) {
   }
   else {
     solo_priority_cycle = false;
-    memset(solo_channel_popularity, 0, sizeof(solo_channel_popularity));
     Logger::log(STD_MSG, "[DWELL] Priority cycle complete; refreshing channel popularity");
   }
 
   return true;
+}
+
+size_t WiFiOps::getSoloChannelCount() {
+  return NUM_SCAN_CHANNELS;
+}
+
+uint8_t WiFiOps::getSoloChannel(size_t index) {
+  return index < NUM_SCAN_CHANNELS ? scan_channels[index] : 0;
+}
+
+uint16_t WiFiOps::getSoloChannelPopularity(size_t index) {
+  return index < NUM_SCAN_CHANNELS ? solo_channel_popularity[index] : 0;
+}
+
+uint16_t WiFiOps::getPeakSoloChannelPopularity() {
+  uint16_t peak = 0;
+  for (size_t i = 0; i < NUM_SCAN_CHANNELS; i++) {
+    if (solo_channel_popularity[i] > peak)
+      peak = solo_channel_popularity[i];
+  }
+  return peak;
 }
 
 void WiFiOps::sendHeartbeat() {

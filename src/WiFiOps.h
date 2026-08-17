@@ -267,6 +267,10 @@ class WiFiOps
     uint32_t getCurrent2g4Count();
     uint32_t getCurrent5gCount();
     uint32_t getCurrentBLECount();
+    size_t getSoloChannelCount();
+    uint8_t getSoloChannel(size_t index);
+    uint16_t getSoloChannelPopularity(size_t index);
+    uint16_t getPeakSoloChannelPopularity();
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
     void startESPNow();

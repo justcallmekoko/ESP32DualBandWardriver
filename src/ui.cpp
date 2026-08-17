@@ -1,4 +1,12 @@
 #include "ui.h"
+#include "ChannelDwell.h"
+
+namespace {
+constexpr uint8_t CHANNELS_PER_PAGE = 8;
+constexpr uint32_t POPULARITY_PAGE_TIME_MS = 4000;
+constexpr uint8_t POPULARITY_GRAPH_BOTTOM = 65;
+constexpr uint8_t POPULARITY_MAX_BAR_HEIGHT = 48;
+}
 
 void UI::begin() {
   sd_file_menu.list = new LinkedList<MenuNode>();
@@ -356,8 +364,105 @@ void UI::setDisplayMode(uint8_t new_mode) {
   this->last_stat_display_mode = 255;
   this->last_mode_change_ms    = millis();
   this->lastUpdateTime         = 0;
+  if (new_mode == CHANNEL_POPULARITY) {
+    this->popularity_page = 0;
+    this->popularity_page_started_ms = millis();
+  }
   if (new_mode != SD_FILES && new_mode != INCOGNITO)
     display.tft->fillScreen(ST77XX_BLACK);
+}
+
+void UI::drawChannelPopularity(uint32_t currentTime, bool do_now) {
+  if (wifi_ops.run_mode != SOLO_MODE) {
+    if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now)) return;
+    lastUpdateTime = currentTime;
+    display.clearScreen();
+    display.tft->setRotation(3);
+    display.tft->setTextWrap(false);
+    display.tft->setTextSize(1);
+    display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    display.tft->setCursor(19, 24);
+    display.tft->print("CHANNEL POPULARITY");
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    String mode_label = wifi_ops.run_mode == CORE_MODE ? "CORE MODE" : "NODE MODE";
+    display.tft->setCursor((TFT_WIDTH - mode_label.length() * 6) / 2, 40);
+    display.tft->print(mode_label);
+    display.tft->setTextColor(0x7BEF, ST77XX_BLACK);
+    display.tft->setCursor(10, 56);
+    display.tft->print("Available in SOLO mode");
+    return;
+  }
+
+  const size_t channel_count = wifi_ops.getSoloChannelCount();
+  const uint8_t page_count =
+    (channel_count + CHANNELS_PER_PAGE - 1) / CHANNELS_PER_PAGE;
+  bool page_changed = false;
+  if ((currentTime - popularity_page_started_ms >= POPULARITY_PAGE_TIME_MS) &&
+      page_count > 0) {
+    popularity_page = (popularity_page + 1) % page_count;
+    popularity_page_started_ms = currentTime;
+    page_changed = true;
+  }
+
+  if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now) &&
+      (!page_changed)) return;
+  lastUpdateTime = currentTime;
+
+  display.clearScreen();
+  display.tft->setRotation(3);
+  display.tft->setTextWrap(false);
+  display.tft->setTextSize(1);
+  display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  display.tft->setCursor(0, 0);
+  display.tft->print("CHANNEL POPULARITY");
+
+  char page_label[6];
+  snprintf(page_label, sizeof(page_label), "%u/%u", popularity_page + 1, page_count);
+  display.tft->setTextColor(0x7BEF, ST77XX_BLACK);
+  display.tft->setCursor(TFT_WIDTH - strlen(page_label) * 6, 0);
+  display.tft->print(page_label);
+  display.tft->drawFastHLine(0, 9, TFT_WIDTH, 0x4208);
+
+  const uint16_t peak = wifi_ops.getPeakSoloChannelPopularity();
+  const size_t first_channel = popularity_page * CHANNELS_PER_PAGE;
+  const uint8_t slot_width = TFT_WIDTH / CHANNELS_PER_PAGE;
+
+  for (uint8_t slot = 0; slot < CHANNELS_PER_PAGE; slot++) {
+    const size_t index = first_channel + slot;
+    if (index >= channel_count) break;
+
+    const uint8_t channel = wifi_ops.getSoloChannel(index);
+    const uint16_t popularity = wifi_ops.getSoloChannelPopularity(index);
+    const uint8_t bar_height = calculatePopularityBarHeight(
+      popularity, peak, POPULARITY_MAX_BAR_HEIGHT);
+    const int16_t x = slot * slot_width + 4;
+    const uint16_t color = channel <= 14 ? ST77XX_CYAN : 0xF81F;
+
+    if (bar_height > 0)
+      display.tft->fillRect(x, POPULARITY_GRAPH_BOTTOM - bar_height,
+                            slot_width - 8, bar_height, color);
+    else
+      display.tft->drawFastHLine(x, POPULARITY_GRAPH_BOTTOM,
+                                 slot_width - 8, 0x4208);
+
+    String channel_label = String(channel);
+    display.tft->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    display.tft->setCursor(slot * slot_width +
+      (slot_width - channel_label.length() * 6) / 2, 70);
+    display.tft->print(channel_label);
+  }
+
+  if (peak == 0) {
+    display.tft->setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    if (wifi_ops.in_geofence) {
+      display.tft->setCursor(56, 32);
+      display.tft->print("GEOFENCE");
+    }
+    else {
+      display.tft->setCursor(43, 32);
+      display.tft->print("MEASURING...");
+    }
+  }
 }
 
 // ============================================================
@@ -828,6 +933,10 @@ void UI::main(uint32_t currentTime) {
         battery.getBatteryLevel()
       );
     }
+    // ---- Screen 3: channel popularity ----
+    else if (this->stat_display_mode == CHANNEL_POPULARITY) {
+      this->drawChannelPopularity(currentTime);
+    }
 
     // ---- Button handling — debounced at 300ms ----
     bool mode_change_ok = (currentTime - this->last_mode_change_ms >= 300);
@@ -848,6 +957,8 @@ void UI::main(uint32_t currentTime) {
           wifi_ops.getCurrentNetCount(), wifi_ops.getCurrent2g4Count(),
           wifi_ops.getCurrent5gCount(), wifi_ops.getCurrentBLECount(),
           gps.getNumSats(), battery.getBatteryLevel(), true);
+      else if (next == CHANNEL_POPULARITY)
+        this->drawChannelPopularity(currentTime, true);
     }
 
     if (d_btn.justPressed() && mode_change_ok) {
@@ -866,6 +977,8 @@ void UI::main(uint32_t currentTime) {
           wifi_ops.getCurrentNetCount(), wifi_ops.getCurrent2g4Count(),
           wifi_ops.getCurrent5gCount(), wifi_ops.getCurrentBLECount(),
           gps.getNumSats(), battery.getBatteryLevel(), true);
+      else if (next == CHANNEL_POPULARITY)
+        this->drawChannelPopularity(currentTime, true);
     }
 
     if (c_btn.justPressed())
