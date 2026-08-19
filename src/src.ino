@@ -49,9 +49,10 @@ void setup() {
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
 
-  pinMode(LED_PIN, OUTPUT);
-
-  digitalWrite(LED_PIN, LOW);
+  #ifdef HAS_ACTIVITY_LED
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
+  #endif
 
   // Load settings
   settings.begin();
@@ -117,11 +118,16 @@ void loop() {
   // Nodes
   else if ((wifi_ops.run_mode == NODE_MODE) && (wifi_ops.getNodeReady())) {
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
-    digitalWrite(LED_PIN, HIGH);
+    #ifdef HAS_ACTIVITY_LED
+      digitalWrite(LED_PIN, HIGH);
+    #endif
   }
   else {
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);
-    if (wifi_ops.run_mode == NODE_MODE)
-      digitalWrite(LED_PIN, LOW);
+    if (wifi_ops.run_mode == NODE_MODE) {
+      #ifdef HAS_ACTIVITY_LED
+        digitalWrite(LED_PIN, LOW);
+      #endif
+    }
   }
 }

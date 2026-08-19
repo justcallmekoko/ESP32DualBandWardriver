@@ -21,11 +21,16 @@
 28 ACT LED
 */
 
-#define JCMK_HOST_BOARD
+#if defined(T_DONGLE_C5)
+  #define DEVICE_NAME "C5 Wardriver T-Dongle"
+  #define SINGLE_NAV_BUTTON
+#else
+  #define JCMK_HOST_BOARD
+  #define DEVICE_NAME "JCMK C5 Wardriver"
+#endif
 
 //// Firmware info stuff
 #define FIRMWARE_VERSION "v2.3.2"
-#define DEVICE_NAME      "JCMK C5 Wardriver"
 
 //// Role stuff
 #define SOLO
@@ -57,37 +62,63 @@
 
 
 //// LED stuff
-#define LED_PIN 28
+#ifndef T_DONGLE_C5
+  #define HAS_ACTIVITY_LED
+  #define LED_PIN 28
+#endif
 
 
 //// Display stuff
-#define ON  HIGH
-#define OFF LOW
+#ifdef T_DONGLE_C5
+  #define ON  LOW
+  #define OFF HIGH
+#else
+  #define ON  HIGH
+  #define OFF LOW
+#endif
 
 #define TFT_HEIGHT 80
 #define TFT_WIDTH  160
 
 #define TFT_SPI_SPEED 27000000
 
-#define TFT_CS   23
-#define TFT_DC   24
-#define TFT_RST  -1
-#define TOUCH_CS -1
-#define TFT_MOSI 7
-#define TFT_SCLK 6
-#define TFT_BL   27
+#ifdef T_DONGLE_C5
+  #define TFT_CS   10
+  #define TFT_DC   3
+  #define TFT_RST  1
+  #define TOUCH_CS -1
+  #define TFT_MOSI 2
+  #define TFT_SCLK 6
+  #define TFT_BL   0
+#else
+  #define TFT_CS   23
+  #define TFT_DC   24
+  #define TFT_RST  -1
+  #define TOUCH_CS -1
+  #define TFT_MOSI 7
+  #define TFT_SCLK 6
+  #define TFT_BL   27
+#endif
 
 
 //// UI Stuff
 #define UI_UPDATE_TIME 5 * 1000 // 1 second
 
-#define U_BTN 9
-#define D_BTN 8
-#define C_BTN 1
-
-#define C_PULL false
-#define U_PULL false
-#define D_PULL false
+#ifdef T_DONGLE_C5
+  #define U_BTN 28
+  #define D_BTN -1
+  #define C_BTN -1
+  #define C_PULL true
+  #define U_PULL true
+  #define D_PULL true
+#else
+  #define U_BTN 9
+  #define D_BTN 8
+  #define C_BTN 1
+  #define C_PULL false
+  #define U_PULL false
+  #define D_PULL false
+#endif
 
 #define WEB_PAGE_TIMEOUT 60 * 1000 // 60 seconds
 #define TIMER_UPDATE 1 * 1000 // 1 second
@@ -105,22 +136,35 @@
 
 
 //// Battery stuff
-#define HAS_BATTERY
-#define I2C_SCL 4
-#define I2C_SDA 5
+#ifndef T_DONGLE_C5
+  #define HAS_BATTERY
+  #define I2C_SCL 4
+  #define I2C_SDA 5
+#endif
 
 
 //// GPS stuff
 #define GPS_SERIAL_INDEX 1
-#define TX_TO_GPS 13
-#define RX_TO_GPS 14
+#ifdef T_DONGLE_C5
+  #define TX_TO_GPS 11
+  #define RX_TO_GPS 12
+#else
+  #define TX_TO_GPS 13
+  #define RX_TO_GPS 14
+#endif
 
 
 //// SD stuff
 #define SPI_SCK  6
-#define SPI_MISO 2
-#define SPI_MOSI 7
-#define SD_CS    10
+#ifdef T_DONGLE_C5
+  #define SPI_MISO 7
+  #define SPI_MOSI 2
+  #define SD_CS    23
+#else
+  #define SPI_MISO 2
+  #define SPI_MOSI 7
+  #define SD_CS    10
+#endif
 
 #define UPDATE_KEY "UpdateFile"
 
