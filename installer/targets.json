@@ -10,15 +10,6 @@
       "assetSuffix": "esp32c5devkitc1",
       "chipFamily": "ESP32-C5",
       "esptoolChip": "esp32c5"
-    },
-    {
-      "id": "lilygo-t-dongle-c5",
-      "displayName": "LilyGo T-Dongle C5",
-      "aliases": ["T-Dongle C5", "T-Dongle-C5"],
-      "buildFlag": "T_DONGLE_C5",
-      "assetSuffix": "lilygo_t_dongle_c5",
-      "chipFamily": "ESP32-C5",
-      "esptoolChip": "esp32c5"
     }
   ]
 }
