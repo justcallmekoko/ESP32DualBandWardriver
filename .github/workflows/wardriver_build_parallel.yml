@@ -10,6 +10,19 @@ on:
   pull_request:
 
 jobs:
+  test_solo_scheduler:
+    name: Test SOLO yield scheduler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Build and run native dwell tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Wpedantic \
+            -Isrc src/ChannelDwell.cpp tools/test_channel_dwell.cpp \
+            -o /tmp/test_channel_dwell
+          /tmp/test_channel_dwell
+
   compile_sketch:
     name: build ${{ matrix.board.name }}
     runs-on: ubuntu-latest

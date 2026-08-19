@@ -137,6 +137,9 @@ class WiFiOps
     uint32_t total_ble_count = 0;
 
     void startNextNodeAssignedScan();
+    void resetSoloYieldScan();
+    void startNextSoloChannelScan();
+    void completeSoloChannelScan(uint16_t new_unique_networks);
     void runAdminWindowAfterScanCycle();
     void debugPrintNodeTable();
     void handleNodeTopologyChange();
@@ -156,7 +159,7 @@ class WiFiOps
     bool mac_cmp(struct mac_addr addr1, struct mac_addr addr2);
     void clearMacHistory();
     String security_int_to_string(int security_type);
-    void processWardrive(uint16_t networks);
+    uint16_t processWardrive(uint16_t networks);
     void shutdownAccessPoint(bool ap_active = true);
     bool isSSIDExcluded(const String& ssid, const String* list, int count); // Chunk 4
 
@@ -264,6 +267,10 @@ class WiFiOps
     uint32_t getCurrent2g4Count();
     uint32_t getCurrent5gCount();
     uint32_t getCurrentBLECount();
+    size_t getSoloChannelCount();
+    uint8_t getSoloChannel(size_t index);
+    uint16_t getSoloChannelPopularity(size_t index);
+    uint16_t getPeakSoloChannelPopularity();
     bool seen_mac(unsigned char* mac);
     void save_mac(unsigned char* mac);
     void startESPNow();

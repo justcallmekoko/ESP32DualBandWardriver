@@ -1,5 +1,6 @@
 #include "WiFiOps.h"
 #include "BatteryInterface.h"
+#include "ChannelDwell.h"
 #include "esp_task_wdt.h"
 
 #include <cmath>
@@ -61,6 +62,17 @@ static const uint8_t scan_channels[] = {
 };
 
 #define NUM_SCAN_CHANNELS (sizeof(scan_channels) / sizeof(scan_channels[0]))
+
+static uint16_t solo_channel_yield_ema[NUM_SCAN_CHANNELS] = {0};
+static uint8_t solo_bonus_channels[SOLO_BONUS_CHANNEL_COUNT] = {0};
+static uint8_t solo_scan_channel_idx = 0;
+static uint8_t solo_base_scan_position = 0;
+static uint8_t solo_bonus_scan_position = 0;
+static uint8_t solo_bonus_channel_count = 0;
+static bool solo_bonus_phase = false;
+static bool solo_reset_counters_on_result = true;
+static uint32_t solo_last_ble_scan_ms = 0;
+static uint32_t solo_scan_started_ms = 0;
 
 uint8_t assigned_start_idx = 0;
 uint8_t assigned_end_idx = NUM_SCAN_CHANNELS - 1;
@@ -723,6 +735,99 @@ void WiFiOps::startNextNodeAssignedScan() {
   }
 }
 
+void WiFiOps::resetSoloYieldScan() {
+  memset(solo_channel_yield_ema, 0, sizeof(solo_channel_yield_ema));
+  memset(solo_bonus_channels, 0, sizeof(solo_bonus_channels));
+  solo_scan_channel_idx = 0;
+  solo_base_scan_position = 0;
+  solo_bonus_scan_position = 0;
+  solo_bonus_channel_count = 0;
+  solo_bonus_phase = false;
+  solo_reset_counters_on_result = true;
+  solo_last_ble_scan_ms = millis();
+  solo_scan_started_ms = 0;
+}
+
+void WiFiOps::startNextSoloChannelScan() {
+  WiFi.setScanActiveMinTime(SOLO_SCAN_MIN_DWELL_MS);
+  solo_scan_started_ms = millis();
+  WiFi.scanNetworks(
+    true,
+    true,
+    false,
+    SOLO_SCAN_MAX_DWELL_MS,
+    scan_channels[solo_scan_channel_idx]);
+}
+
+void WiFiOps::completeSoloChannelScan(uint16_t new_unique_networks) {
+  if (solo_bonus_phase) {
+    solo_bonus_scan_position++;
+    if (solo_bonus_scan_position < solo_bonus_channel_count) {
+      solo_scan_channel_idx = solo_bonus_channels[solo_bonus_scan_position];
+      return;
+    }
+
+    solo_bonus_phase = false;
+    solo_base_scan_position = 0;
+    solo_scan_channel_idx = 0;
+    solo_reset_counters_on_result = true;
+    Logger::log(STD_MSG, "[YIELD] Bonus visits complete; starting fast sweep");
+    return;
+  }
+
+  solo_channel_yield_ema[solo_scan_channel_idx] = updateSoloYieldEma(
+    solo_channel_yield_ema[solo_scan_channel_idx],
+    new_unique_networks,
+    millis() - solo_scan_started_ms);
+
+  solo_base_scan_position++;
+  if (solo_base_scan_position < NUM_SCAN_CHANNELS) {
+    solo_scan_channel_idx = solo_base_scan_position;
+    return;
+  }
+
+  solo_bonus_channel_count = selectSoloBonusChannels(
+    solo_channel_yield_ema,
+    NUM_SCAN_CHANNELS,
+    solo_bonus_channels,
+    SOLO_BONUS_CHANNEL_COUNT);
+  solo_bonus_scan_position = 0;
+
+  if (solo_bonus_channel_count > 0) {
+    solo_bonus_phase = true;
+    solo_scan_channel_idx = solo_bonus_channels[0];
+    Logger::log(STD_MSG, "[YIELD] Fast sweep complete; bonus visits=" +
+                String(solo_bonus_channel_count));
+  }
+  else {
+    solo_base_scan_position = 0;
+    solo_scan_channel_idx = 0;
+    solo_reset_counters_on_result = true;
+    Logger::log(STD_MSG, "[YIELD] Fast sweep complete; no bonus visits");
+  }
+}
+
+size_t WiFiOps::getSoloChannelCount() {
+  return NUM_SCAN_CHANNELS;
+}
+
+uint8_t WiFiOps::getSoloChannel(size_t index) {
+  return index < NUM_SCAN_CHANNELS ? scan_channels[index] : 0;
+}
+
+uint16_t WiFiOps::getSoloChannelPopularity(size_t index) {
+  return index < NUM_SCAN_CHANNELS ? solo_channel_yield_ema[index] : 0;
+}
+
+uint16_t WiFiOps::getPeakSoloChannelPopularity() {
+  uint16_t peak = 0;
+  for (size_t i = 0; i < NUM_SCAN_CHANNELS; i++) {
+    if (solo_channel_yield_ema[i] > peak)
+      peak = solo_channel_yield_ema[i];
+  }
+  return peak;
+}
+
 void WiFiOps::sendHeartbeat() {
   extern WiFiOps wifi_ops;
 
@@ -1259,7 +1364,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         if (this->run_mode == NODE_MODE)
           this->startNextNodeAssignedScan();
         else
-          WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
+          this->startNextSoloChannelScan();
         delay(100);
         if (WiFi.scanComplete() == WIFI_SCAN_FAILED)
           Logger::log(WARN_MSG, "WiFi scan failed to start!");
@@ -1282,21 +1387,37 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         }
         // ---- end trigger SSID check ----
 
-        this->current_net_count = 0;
-        this->current_ble_count = 0;
-        this->current_2g4_count = 0;
-        this->current_5g_count = 0;
+        // SOLO now scans one channel at a time, so retain the counters across
+        // the full channel cycle. NODE scans continue to reset per assignment.
+        if ((this->run_mode == NODE_MODE) || solo_reset_counters_on_result) {
+          this->current_net_count = 0;
+          this->current_ble_count = 0;
+          this->current_2g4_count = 0;
+          this->current_5g_count = 0;
+          solo_reset_counters_on_result = false;
+        }
 
         // Scan has completed and is number of networks found
         // Handle the scan results
-        this->processWardrive(scan_status);
+        uint16_t new_unique_networks = this->processWardrive(scan_status);
+
+        if (this->run_mode == SOLO_MODE)
+          this->completeSoloChannelScan(new_unique_networks);
 
         // Delete the scan data
         WiFi.scanDelete();
 
         // Scan BLE here
-        if (current_assigned_scan_idx == assigned_start_idx)
+        const bool solo_ble_due =
+          (this->run_mode == SOLO_MODE) &&
+          (millis() - solo_last_ble_scan_ms >= SOLO_BLE_INTERVAL_MS);
+        if (solo_ble_due ||
+            ((this->run_mode == NODE_MODE) &&
+             (current_assigned_scan_idx == assigned_start_idx))) {
           this->scanBLE();
+          if (solo_ble_due)
+            solo_last_ble_scan_ms = millis();
+        }
 
         while(pBLEScan->isScanning())
           delay(1);
@@ -1304,11 +1425,11 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
         if ((this->run_mode == NODE_MODE) && (current_assigned_scan_idx == assigned_start_idx))
           this->runAdminWindowAfterScanCycle();
 
-        // Start a new scan on all channels
+        // Continue the role-specific channel scan sequence.
         if (this->run_mode == NODE_MODE)
           this->startNextNodeAssignedScan();
         else
-          WiFi.scanNetworks(true, true, false, CHANNEL_TIMER);
+          this->startNextSoloChannelScan();
       }
     }
   }
@@ -1518,9 +1639,10 @@ bool WiFiOps::isSSIDExcluded(const String& ssid,
   return false;
 }
 
-void WiFiOps::processWardrive(uint16_t networks) {
+uint16_t WiFiOps::processWardrive(uint16_t networks) {
   String display_string;
   bool do_save;
+  uint16_t new_unique_networks = 0;
 
   // ---- Chunk 4: load exclusion list once per scan cycle ----
   // Doing this outside the network loop avoids re-parsing the
@@ -1566,6 +1688,7 @@ void WiFiOps::processWardrive(uint16_t networks) {
 
         this->setCurrentNetCount(this->getCurrentNetCount() + 1);
         this->setTotalNetCount(this->getTotalNetCount() + 1);
+        new_unique_networks++;
 
         if (WiFi.channel(i) > 14)
           this->setCurrent5gCount(this->getCurrent5gCount() + 1);
@@ -1632,6 +1755,8 @@ void WiFiOps::processWardrive(uint16_t networks) {
 
   if (this->run_mode == SOLO_MODE)
     digitalWrite(LED_PIN, LOW);
+
+  return new_unique_networks;
 }
 
 bool WiFiOps::mac_cmp(struct mac_addr addr1, struct mac_addr addr2) {
@@ -2956,6 +3081,9 @@ bool WiFiOps::begin(bool skip_admin) {
 
   this->initWiFi();
 
+  if (this->run_mode == SOLO_MODE)
+    this->resetSoloYieldScan();
+
   // Init NimBLE
   this->initBLE(); // NimBLE needs to not be init in order to upload to wigle
 
@@ -3231,6 +3359,8 @@ void WiFiOps::departDock() {
   this->deinitWiFi();
   this->initWiFi();
   this->initBLE();
+  if (this->run_mode == SOLO_MODE)
+    this->resetSoloYieldScan();
 
   // Fresh log file so post-dock drive gets its own file
   this->startLog(LOG_FILE_NAME);
