@@ -10,6 +10,9 @@
 #include "utils.h"
 #include "ui.h"
 #include "logger.h"
+#ifdef HAS_T_DONGLE_LED
+  #include <APA102.h>
+#endif
 
 Buffer buffer;
 Settings settings;
@@ -19,8 +22,26 @@ WiFiOps wifi_ops;
 Utils utils;
 UI ui_obj;
 bool g_force_display_redraw = false;
-
 SPIClass sharedSPI(SPI);
+
+#ifdef HAS_T_DONGLE_LED
+APA102<T_DONGLE_LED_DATA_PIN, T_DONGLE_LED_CLOCK_PIN> t_dongle_led;
+
+void writeTDongleLed(bool scanning) {
+  const uint8_t brightness = scanning ? 10 : 0;
+  t_dongle_led.startFrame();
+  t_dongle_led.sendColor(0, 0, scanning ? 255 : 0, brightness);
+  t_dongle_led.endFrame(1);
+}
+
+void restoreTDongleSpi() {
+  // The APA102 and TFT share MOSI/clock. The software-driven LED frame takes
+  // ownership of those pins, so restore the hardware SPI routing before any
+  // display or SD work in the next loop.
+  sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+}
+#endif
+
 Display display = Display(&sharedSPI, TFT_CS, TFT_DC, TFT_RST);
 SDInterface sd_obj = SDInterface(&sharedSPI, SD_CS);
 
@@ -49,9 +70,10 @@ void setup() {
   // Show us IDF information
   Logger::log(STD_MSG, "ESP-IDF version is: " + String(esp_get_idf_version()));
 
-  pinMode(LED_PIN, OUTPUT);
-
-  digitalWrite(LED_PIN, LOW);
+  #ifdef HAS_ACTIVITY_LED
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
+  #endif
 
   // Load settings
   settings.begin();
@@ -96,11 +118,23 @@ void setup() {
   settings.printJsonSettings(settings.getSettingsString());
 
   Logger::log(GUD_MSG, "Initialization complete!");
+
+  #ifdef HAS_T_DONGLE_LED
+    // Setup performs several display and SD transactions. Leave the shared
+    // pins with the LED last and explicitly latch the idle/off state.
+    pinMode(T_DONGLE_LED_DATA_PIN, OUTPUT);
+    pinMode(T_DONGLE_LED_CLOCK_PIN, OUTPUT);
+    writeTDongleLed(false);
+  #endif
 }
 
 void loop() {
   // Take current time of this loop for functions
   uint32_t currentTime = millis();
+
+  #ifdef HAS_T_DONGLE_LED
+    restoreTDongleSpi();
+  #endif
 
   // Refresh all functions
   wifi_ops.main(currentTime, ui_obj.stat_display_mode == SD_FILES);
@@ -117,11 +151,22 @@ void loop() {
   // Nodes
   else if ((wifi_ops.run_mode == NODE_MODE) && (wifi_ops.getNodeReady())) {
     wifi_ops.setCurrentScanMode(WIFI_WARDRIVING);
-    digitalWrite(LED_PIN, HIGH);
+    #ifdef HAS_ACTIVITY_LED
+      digitalWrite(LED_PIN, HIGH);
+    #endif
   }
   else {
     wifi_ops.setCurrentScanMode(WIFI_STANDBY);
-    if (wifi_ops.run_mode == NODE_MODE)
-      digitalWrite(LED_PIN, LOW);
+    if (wifi_ops.run_mode == NODE_MODE) {
+      #ifdef HAS_ACTIVITY_LED
+        digitalWrite(LED_PIN, LOW);
+      #endif
+    }
   }
+
+  #ifdef HAS_T_DONGLE_LED
+    // TFT and SD traffic on GPIO2/GPIO6 looks like LED data. Reassert the
+    // intended state last on every loop: blue while scanning, off at idle.
+    writeTDongleLed(wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING);
+  #endif
 }

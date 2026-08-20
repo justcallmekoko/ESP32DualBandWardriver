@@ -31,6 +31,7 @@ jobs:
       matrix:
         board:
           - { name: "ESP32-C5-DevKitC-1",            flag: "C5_WARDRIVER",              fbqn: "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled",                                                file_name: "esp32c5devkitc1",         tft: false, tft_file: "",                                   build_dir: "esp32c5",                    addr: "0x2000",   idf_ver: "3.3.0",    nimble_ver: "2.3.0",    esp_async: "bigbrodude6119/ESPAsyncWebServer",     esp_async_ver: "master" }
+          - { name: "LilyGo T-Dongle C5",            flag: "T_DONGLE_C5",              fbqn: "esp32:esp32:esp32c5:PartitionScheme=min_spiffs,PSRAM=enabled",                                                file_name: "lilygo_t_dongle_c5",      tft: false, tft_file: "",                                   build_dir: "esp32c5",                    addr: "0x2000",   idf_ver: "3.3.0",    nimble_ver: "2.3.0",    esp_async: "bigbrodude6119/ESPAsyncWebServer",     esp_async_ver: "master" }
           
     steps:
       - name: Checkout Code
@@ -86,6 +87,14 @@ jobs:
           repository: h2zero/NimBLE-Arduino
           ref: ${{ matrix.board.nimble_ver }}
           path: CustomNimBLE-Arduino
+
+      - name: Install APA102 for LilyGo T-Dongle C5
+        if: matrix.board.flag == 'T_DONGLE_C5'
+        uses: actions/checkout@v4
+        with:
+          repository: pololu/apa102-arduino
+          ref: 3.0.0
+          path: CustomAPA102
 
       - name: Install ArduinoJson
         uses: actions/checkout@v2
@@ -197,14 +206,14 @@ jobs:
       - name: Upload ${{ matrix.board.name }} Bootloader Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bootloader.bin
+          name: bootloader.${{ matrix.board.file_name }}.bin
           path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/bootloader.bin
           retention-days: 5
           
       - name: Upload ${{ matrix.board.name }} Partitions Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: partitions.bin
+          name: partitions.${{ matrix.board.file_name }}.bin
           path: ./src/build/esp32.esp32.${{ matrix.board.build_dir }}/partitions.bin
           retention-days: 5
 

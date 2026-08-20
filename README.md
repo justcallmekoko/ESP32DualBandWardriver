@@ -2,6 +2,12 @@
 Based on the ESP32-C5-DevKitC-1 v1.2, the ESP32 Dual Band Wardriver offers wardriving capabilities for 2.4GHz and 5GHz WiFi as well as BLE.
 Logs are formatted for WiGLE and saved to SD card.
 
+The `T_DONGLE_C5` build supports the LilyGo T-Dongle C5's onboard 160x80
+ST7735 display, microSD slot, and GPIO28 BOOT button. Connect a 3.3V UART GPS
+RX to GPIO11 and GPS TX to GPIO12. The single button cycles the stats, detail,
+channel-popularity, and incognito screens; the SD file menu is intentionally
+unavailable. Stored logs remain uploadable through dock mode and the admin web UI.
+
 ## Table of Contents
 - [Leaderboards](#leaderboards)
 - [Connections](#connections)
