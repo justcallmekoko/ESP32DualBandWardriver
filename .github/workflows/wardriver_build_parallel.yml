@@ -88,6 +88,14 @@ jobs:
           ref: ${{ matrix.board.nimble_ver }}
           path: CustomNimBLE-Arduino
 
+      - name: Install APA102 for LilyGo T-Dongle C5
+        if: matrix.board.flag == 'T_DONGLE_C5'
+        uses: actions/checkout@v4
+        with:
+          repository: pololu/apa102-arduino
+          ref: 3.0.0
+          path: CustomAPA102
+
       - name: Install ArduinoJson
         uses: actions/checkout@v2
         with:

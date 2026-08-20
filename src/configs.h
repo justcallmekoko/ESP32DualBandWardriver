@@ -62,7 +62,11 @@
 
 
 //// LED stuff
-#ifndef T_DONGLE_C5
+#ifdef T_DONGLE_C5
+  #define HAS_T_DONGLE_LED
+  #define T_DONGLE_LED_DATA_PIN  2
+  #define T_DONGLE_LED_CLOCK_PIN 6
+#else
   #define HAS_ACTIVITY_LED
   #define LED_PIN 28
 #endif
