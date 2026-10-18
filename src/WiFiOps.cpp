@@ -14,6 +14,21 @@ static const char MAGIC[4] = {'E','N','O','W'};
 
 static constexpr uint8_t ESPNOW_CHANNEL = 6;
 
+// NODE text sends are async; wait for each frame to leave the radio before the
+// next channel change / scan start, otherwise bursts of WiFi results get dropped
+static volatile bool g_enow_tx_pending = false;
+
+static void OnDataSent(const esp_now_send_info_t* tx_info, esp_now_send_status_t status) {
+  g_enow_tx_pending = false;
+}
+
+static void waitEnowTxDone() {
+  uint32_t start = millis();
+  while (g_enow_tx_pending && (millis() - start) < 20)
+    delay(1);
+  g_enow_tx_pending = false;
+}
+
 // Retry behavior for nodes
 static constexpr uint32_t REQ_INITIAL_MS = 300;   // first retry delay
 static constexpr uint32_t REQ_MAX_MS     = 5000;  // cap retry interval
@@ -875,7 +890,9 @@ bool WiFiOps::sendEncryptedStringToCore(const String& s) {
   msg.len = (uint16_t)n;
 
   // SEND FULL STRUCT (like heartbeat)
+  g_enow_tx_pending = true;
   esp_err_t res = esp_now_send(g_core_mac, (uint8_t*)&msg, sizeof(msg));
+  waitEnowTxDone();
 
   if (res != ESP_OK) {
     Serial.printf("NODE: Encrypted text send FAIL (err=%d)\n", (int)res);
@@ -914,7 +931,9 @@ bool WiFiOps::sendBroadcastStringPlain(const String& s) {
   msg.text[n] = '\0';
   msg.len = (uint16_t)n;
 
+  g_enow_tx_pending = true;
   esp_err_t res = esp_now_send(bcast_mac, (uint8_t*)&msg, sizeof(msg));
+  waitEnowTxDone();
 
   if (res != ESP_OK) {
     Serial.printf("NODE: Broadcast plaintext send FAIL (err=%d)\n", (int)res);
@@ -1209,6 +1228,7 @@ void WiFiOps::startESPNow() {
   }
 
   esp_now_register_recv_cb(OnDataRecv);
+  esp_now_register_send_cb(OnDataSent);
 
   if (this->run_mode == CORE_MODE) {
     Logger::log(STD_MSG, "Role: CORE");
