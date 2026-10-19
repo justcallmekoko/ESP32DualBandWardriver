@@ -768,6 +768,7 @@ void UI::buildNodesMenu(bool preserve_selection) {
     this->addNodes(&nodes_menu, "Core mode only", ST77XX_YELLOW, NULL, 0, []() {});
   }
   else {
+    this->addNodes(&nodes_menu, "Core " + wifi_ops.getDeviceMacAddress(), ST77XX_CYAN, NULL, 0, []() {});
     const uint8_t count = wifi_ops.getNodeCount();
     if (count == 0) {
       this->addNodes(&nodes_menu, "No active nodes", ST77XX_YELLOW, NULL, 0, []() {});

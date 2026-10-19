@@ -2088,6 +2088,8 @@ void WiFiOps::startAccessPoint() {
   display.tft->print("Starting AP: ");
   display.tft->println(this->admin_ap_ssid);
   WiFi.softAP(this->admin_ap_ssid.c_str(), this->admin_ap_password.c_str());
+  display.tft->print("Core MAC: ");
+  display.tft->println(this->getDeviceMacAddress());
   Logger::log(GUD_MSG, "Access Point started");
   Logger::log(GUD_MSG, "IP: ");
   Logger::log(GUD_MSG, WiFi.softAPIP().toString());
@@ -2552,6 +2554,7 @@ void WiFiOps::serveConfigPage() {
     bool   cur_dbg_en      = settings.loadSetting<bool>(DEBUG_LOG_NAME);
     int    cur_mode        = settings.loadSetting<int>("m");
     bool   cur_enc         = settings.loadSetting<bool>("e");
+    const String device_mac = this->getDeviceMacAddress();
 
     String html = "<html><body>";
     html += "<h2>JCMK C5 Wardriver &mdash; Configuration</h2>";
@@ -2646,8 +2649,10 @@ void WiFiOps::serveConfigPage() {
     html += "<input type=\"radio\" name=\"device_mode\" value=\"solo\"" + String(cur_mode == SOLO_MODE ? " checked" : "") + "> Solo<br>";
     html += "<input type=\"radio\" name=\"device_mode\" value=\"core\"" + String(cur_mode == CORE_MODE ? " checked" : "") + "> Core<br>";
     html += "<input type=\"radio\" name=\"device_mode\" value=\"node\"" + String(cur_mode == NODE_MODE ? " checked" : "") + "> Node<br><br>";
-    html += "Core MAC: <input type=\"text\" name=\"core_mac\" value=\"" + cur_core_mac + "\" placeholder=\"AA:BB:CC:DD:EE:FF\" pattern=\"[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}\"><br>";
-    html += "<small>Optional in Solo/Core mode. In Node mode, setting this prevents the node from communicating with any other Core. This device MAC: " + WiFi.macAddress() + "</small><br><br>";
+    html += "<strong>This Device / Core MAC:</strong> <code>" + device_mac + "</code><br>";
+    html += "<small>Enter this address on each Node that should bind to this device.</small><br><br>";
+    html += "Bound Core MAC: <input type=\"text\" name=\"core_mac\" value=\"" + cur_core_mac + "\" placeholder=\"AA:BB:CC:DD:EE:FF\" pattern=\"[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}\"><br>";
+    html += "<small>Used in Node mode to prevent communication with any other Core. Leave blank in Solo/Core mode.</small><br><br>";
 
     // ---- Encryption ----
     html += "<h3>Encryption (ESP-NOW)</h3>";
