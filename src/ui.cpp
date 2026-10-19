@@ -16,6 +16,7 @@ void UI::begin() {
   delete_all_menu.list = new LinkedList<MenuNode>();
   upload_all_menu.list = new LinkedList<MenuNode>();
   mark_geofence_menu.list = new LinkedList<MenuNode>();
+  nodes_menu.list = new LinkedList<MenuNode>();
 
   mode_menu.name   = "Mode";
   action_menu.name = "Action";
@@ -23,6 +24,7 @@ void UI::begin() {
   delete_all_menu.name = "Delete All?";
   upload_all_menu.name = "Upload All?";
   mark_geofence_menu.name = "Mark Geofence Center?";
+  nodes_menu.name = "Nodes MAC CH LAST";
 
   this->buildSDFileMenu();
 
@@ -32,6 +34,7 @@ void UI::begin() {
   delete_all_menu.parentMenu = &sd_file_menu;
   upload_all_menu.parentMenu = &sd_file_menu;
   mark_geofence_menu.parentMenu = &sd_file_menu;
+  nodes_menu.parentMenu = &sd_file_menu;
 
   // Geofence menu
   this->addNodes(&mark_geofence_menu, "No", ST77XX_WHITE, NULL, 0, [this]() {
@@ -729,6 +732,12 @@ void UI::buildSDFileMenu() {
       this->current_menu = &mode_menu;
     });
 
+    this->addNodes(&sd_file_menu, "Nodes", ST77XX_WHITE, NULL, 0, [this]() {
+      this->buildNodesMenu();
+      this->current_menu = &nodes_menu;
+      this->nodes_menu_last_refresh_ms = millis();
+    });
+
     for (int i = 0; i < sd_obj.sd_files->size(); i++) {
       File current_file = sd_obj.getFile("/" + sd_obj.sd_files->get(i));
       if (sd_obj.sd_files->get(i).startsWith("wardrive_") || sd_obj.sd_files->get(i).startsWith("wigle-")) {
@@ -744,6 +753,40 @@ void UI::buildSDFileMenu() {
   } else {
     Logger::log(WARN_MSG, "SD Card not detected. Skipping menu creation...");
   }
+}
+
+void UI::buildNodesMenu(bool preserve_selection) {
+  uint16_t selected = preserve_selection ? nodes_menu.selected : 0;
+  uint16_t scroll_offset = preserve_selection ? nodes_menu.scroll_offset : 0;
+  nodes_menu.list->clear();
+
+  this->addNodes(&nodes_menu, "Back", ST77XX_WHITE, NULL, 0, [this]() {
+    this->current_menu = nodes_menu.parentMenu;
+  });
+
+  if (wifi_ops.run_mode != CORE_MODE) {
+    this->addNodes(&nodes_menu, "Core mode only", ST77XX_YELLOW, NULL, 0, []() {});
+  }
+  else {
+    const uint8_t count = wifi_ops.getNodeCount();
+    if (count == 0) {
+      this->addNodes(&nodes_menu, "No active nodes", ST77XX_YELLOW, NULL, 0, []() {});
+    }
+    for (uint8_t index = 0; index < count; ++index) {
+      NodeStatus status;
+      if (!wifi_ops.getNodeStatus(index, status)) continue;
+      char suffix[6];
+      WiFiOps::macSuffixToStr(status.mac_suffix, suffix);
+      String row = String(suffix) + " " + String(status.start_channel) + "-" +
+                   String(status.end_channel) + " " +
+                   String(status.last_seen_seconds) + "s";
+      this->addNodes(&nodes_menu, row, ST77XX_WHITE, NULL, 0, []() {});
+    }
+  }
+
+  if (selected >= nodes_menu.list->size()) selected = nodes_menu.list->size() - 1;
+  nodes_menu.selected = selected;
+  nodes_menu.scroll_offset = scroll_offset;
 }
 
 void UI::addNodes(Menu * menu, String name, uint8_t color, Menu * child, int place,
@@ -993,6 +1036,12 @@ void UI::main(uint32_t currentTime) {
       Logger::log(STD_MSG, "C_BTN Pressed: " + (String)millis());
 
   } else if (this->stat_display_mode == SD_FILES) {
+    if (this->current_menu == &nodes_menu &&
+        currentTime - this->nodes_menu_last_refresh_ms >= 1000) {
+      this->nodes_menu_last_refresh_ms = currentTime;
+      this->buildNodesMenu(true);
+      this->drawCurrentMenu();
+    }
     this->handleMenuNavigation();
   }
 }

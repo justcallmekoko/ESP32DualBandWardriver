@@ -62,6 +62,7 @@ class UI {
     Menu delete_all_menu;
     Menu upload_all_menu;
     Menu mark_geofence_menu;
+    Menu nodes_menu;
     
 
     bool hard_refresh = false;
@@ -78,6 +79,7 @@ class UI {
 
     uint8_t  popularity_page = 0;
     uint32_t popularity_page_started_ms = 0;
+    uint32_t nodes_menu_last_refresh_ms = 0;
 
     void printFirmwareVersion();
     void printBatteryLevel(int8_t batteryLevel);
@@ -93,6 +95,7 @@ class UI {
                   bool selected = false, String command = "");
     void setupSDFileList();
     void buildSDFileMenu();
+    void buildNodesMenu(bool preserve_selection = false);
     void drawCurrentMenu();
     void handleMenuNavigation();
 
