@@ -1,6 +1,7 @@
 #include "WiFiOps.h"
 #include "BatteryInterface.h"
 #include "ChannelDwell.h"
+#include "WigleFormat.h"
 #include "esp_task_wdt.h"
 
 #include <cmath>
@@ -122,7 +123,7 @@ class scanCallbacks : public NimBLEScanCallbacks {
         if (gps.getFixStatus())
           do_save = true;
 
-        String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",BLE";
+        String wardrive_line = (String)advertisedDevice->getAddress().toString().c_str() + ",,[BLE]," + gps.getDatetime() + ",0,0," + (String)advertisedDevice->getRSSI() + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",,0,BLE";
         Logger::log(GUD_MSG, (String)wifi_ops.mac_history_cursor + " | " + wardrive_line);
 
         if (do_save)
@@ -1072,17 +1073,19 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
             if (rec.type == "B")
               type = "BLE";
 
+            const uint16_t frequency = type == "WIFI" ? wigleFrequencyMHz(rec.channel) : 0;
             String wardrive_line =
               rec.bssid + "," +
               rec.essid + "," +
               rec.security + "," +
               gps.getDatetime() + "," +
               (String)rec.channel + "," +
+              (String)frequency + "," +
               (String)rec.rssi + "," +
               gps.getLat() + "," +
               gps.getLon() + "," +
               gps.getAlt() + "," +
-              gps.getAccuracy() + "," +
+              gps.getAccuracy() + ",,0," +
               type;
 
             Logger::log(GUD_MSG, wardrive_line);
@@ -1722,7 +1725,8 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
           //display_obj.display_buffer->add(display_string);
         #endif
 
-        String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",WIFI";
+        const uint16_t channel = WiFi.channel(i);
+        String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)channel + "," + (String)wigleFrequencyMHz(channel) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",,0,WIFI";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
         if (this->run_mode == SOLO_MODE)
@@ -1894,13 +1898,12 @@ void WiFiOps::startLog(String file_name) {
     false
   );
 
-  String header_line = "WigleWifi-1.4,appRelease=" + (String)FIRMWARE_VERSION +
+  String header_line = "WigleWifi-1.6,appRelease=" + (String)FIRMWARE_VERSION +
                        ",model=" + (String)DEVICE_NAME +
                        ",release=" + (String)FIRMWARE_VERSION +
                        ",device=" + (String)DEVICE_NAME +
-                       ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\n"
-                       "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
-                       "CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type";
+                       ",display=SPI TFT,board=ESP32-C5-DevKit,brand=JustCallMeKoko\n" +
+                       WIGLE_CSV_COLUMNS;
   buffer.append(header_line + "\n");
   Logger::log(GUD_MSG, "Log started: " + timestamped_name + ".log");
 }
