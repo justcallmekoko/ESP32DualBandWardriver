@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ChannelDwell.h"
+#include "WigleFormat.h"
 
 int main() {
   assert(updateSoloYieldEma(0, 8, 1000) == 2);
@@ -30,5 +32,19 @@ int main() {
   assert(calculatePopularityBarHeight(20, 10, 48) == 48);
   assert(calculatePopularityBarHeight(5, 0, 48) == 0);
   assert(calculatePopularityBarHeight(5, 10, 0) == 0);
+
+  size_t columns = 1;
+  for (const char* cursor = WIGLE_CSV_COLUMNS; *cursor; ++cursor)
+    if (*cursor == ',') ++columns;
+  assert(columns == 14);
+  assert(strstr(WIGLE_CSV_COLUMNS, "Frequency") != nullptr);
+  assert(strstr(WIGLE_CSV_COLUMNS, "RCOIs,MfgrId,Type") != nullptr);
+  assert(wigleFrequencyMHz(1) == 2412);
+  assert(wigleFrequencyMHz(13) == 2472);
+  assert(wigleFrequencyMHz(14) == 2484);
+  assert(wigleFrequencyMHz(36) == 5180);
+  assert(wigleFrequencyMHz(177) == 5885);
+  assert(wigleFrequencyMHz(0) == 0);
+  assert(wigleFrequencyMHz(200) == 0);
   return 0;
 }
