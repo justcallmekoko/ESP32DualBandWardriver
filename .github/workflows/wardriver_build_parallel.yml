@@ -38,7 +38,7 @@ jobs:
           
       - name: Install Arduino CLI
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.4.1
           echo "/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin" >> $GITHUB_PATH
           export PATH=$PATH:/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin
           arduino-cli version
