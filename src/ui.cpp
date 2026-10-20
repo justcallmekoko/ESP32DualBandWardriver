@@ -378,6 +378,17 @@ void UI::setDisplayMode(uint8_t new_mode) {
     display.tft->fillScreen(ST77XX_BLACK);
 }
 
+uint8_t UI::nextDisplayMode(uint8_t current, bool forward) const {
+  uint8_t next = forward
+    ? ((current >= MAX_DISPLAY_MODES - 1) ? 0 : current + 1)
+    : ((current == 0) ? MAX_DISPLAY_MODES - 1 : current - 1);
+#ifdef SINGLE_NAV_BUTTON
+  if (next == SD_FILES)
+    next = forward ? INCOGNITO : CHANNEL_POPULARITY;
+#endif
+  return next;
+}
+
 void UI::drawChannelPopularity(uint32_t currentTime, bool do_now) {
   if (wifi_ops.run_mode != SOLO_MODE) {
     if ((currentTime - lastUpdateTime < UI_UPDATE_TIME) && (!do_now)) return;
@@ -508,9 +519,17 @@ void UI::drawStatsNew(uint32_t currentTime, uint32_t count2g4, uint32_t count5g,
 
   // ---- Battery % (right side, row 1) ----
   char batBuf[8];
+#ifdef HAS_BATTERY
   snprintf(batBuf, sizeof(batBuf), "%d%%", batteryLevel);
+#else
+  snprintf(batBuf, sizeof(batBuf), "USB");
+#endif
+#ifdef HAS_BATTERY
   uint16_t batColor = (batteryLevel > 50) ? ST77XX_GREEN :
                       (batteryLevel > 20) ? ST77XX_YELLOW : ST77XX_RED;
+#else
+  uint16_t batColor = ST77XX_WHITE;
+#endif
   uint16_t batW = strlen(batBuf) * 6;
   display.tft->setCursor(TFT_WIDTH - batW - 2, 0);
   display.tft->setTextColor(batColor, ST77XX_BLACK);
@@ -950,8 +969,7 @@ void UI::main(uint32_t currentTime) {
     bool mode_change_ok = (currentTime - this->last_mode_change_ms >= 300);
 
     if (u_btn.justPressed() && mode_change_ok) {
-      uint8_t next = (this->stat_display_mode >= MAX_DISPLAY_MODES - 1)
-                       ? 0 : this->stat_display_mode + 1;
+      uint8_t next = this->nextDisplayMode(this->stat_display_mode, true);
       this->setDisplayMode(next);
       if (next == SD_FILES)
         this->drawCurrentMenu();
@@ -969,9 +987,9 @@ void UI::main(uint32_t currentTime) {
         this->drawChannelPopularity(currentTime, true);
     }
 
+    #ifndef SINGLE_NAV_BUTTON
     if (d_btn.justPressed() && mode_change_ok) {
-      uint8_t next = (this->stat_display_mode == 0)
-                       ? MAX_DISPLAY_MODES - 1 : this->stat_display_mode - 1;
+      uint8_t next = this->nextDisplayMode(this->stat_display_mode, false);
       this->setDisplayMode(next);
       if (next == SD_FILES)
         this->drawCurrentMenu();
@@ -988,9 +1006,12 @@ void UI::main(uint32_t currentTime) {
       else if (next == CHANNEL_POPULARITY)
         this->drawChannelPopularity(currentTime, true);
     }
+    #endif
 
+    #ifndef SINGLE_NAV_BUTTON
     if (c_btn.justPressed())
       Logger::log(STD_MSG, "C_BTN Pressed: " + (String)millis());
+    #endif
 
   } else if (this->stat_display_mode == SD_FILES) {
     this->handleMenuNavigation();
