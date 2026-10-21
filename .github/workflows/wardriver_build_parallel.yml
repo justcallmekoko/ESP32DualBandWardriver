@@ -38,15 +38,20 @@ jobs:
           
       - name: Install Arduino CLI
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.4.1
           echo "/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin" >> $GITHUB_PATH
           export PATH=$PATH:/home/runner/work/ESP32DualBandWardriver/ESP32DualBandWardriver/bin
           arduino-cli version
 
       - name: Install Arduino-ESP32 Core v${{ matrix.board.idf_ver }}
         run: |
-          arduino-cli core update-index
-          arduino-cli core install esp32:esp32@${{ matrix.board.idf_ver }}
+          mkdir -p "$HOME/.arduino15"
+          curl -fsSL https://downloads.arduino.cc/packages/package_index.json \
+            -o "$HOME/.arduino15/package_index.json"
+          curl -fsSL https://espressif.github.io/arduino-esp32/package_esp32_index.json \
+            -o "$HOME/.arduino15/package_esp32_index.json"
+          arduino-cli core install esp32:esp32@${{ matrix.board.idf_ver }} \
+            --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 
       - name: Verify Installed Cores
         run: arduino-cli core list
