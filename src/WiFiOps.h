@@ -218,7 +218,7 @@ class WiFiOps
     bool isDocked() { return dock_state != DOCK_STATE_NONE; }
     uint8_t getNodeCount() { return getActiveNodeCount(); }
     bool getNodeStatus(uint8_t active_index, NodeStatus& status);
-    String getDeviceMacAddress() const { return WiFi.macAddress(); }
+    String getDeviceMacAddress() const;
 
     uint8_t current_assignment_version = 1;
     uint8_t current_assigned_scan_idx = 0;

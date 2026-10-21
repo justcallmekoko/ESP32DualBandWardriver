@@ -3,6 +3,7 @@
 #include "ChannelDwell.h"
 #include "WigleFormat.h"
 #include "CoreBinding.h"
+#include "esp_mac.h"
 #include "esp_task_wdt.h"
 
 #include <cmath>
@@ -623,6 +624,16 @@ void WiFiOps::setFixedChannel(uint8_t ch) {
   Serial.printf("Home channel is now: %u\n", primary);
 
   esp_wifi_set_promiscuous(false);
+}
+
+String WiFiOps::getDeviceMacAddress() const {
+  uint8_t mac[6];
+  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK)
+    return "Unavailable";
+
+  char formatted_mac[18];
+  formatCoreMac(mac, formatted_mac);
+  return String(formatted_mac);
 }
 
 bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]) {
