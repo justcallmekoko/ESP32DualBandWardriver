@@ -4,6 +4,7 @@
 
 #include "ChannelDwell.h"
 #include "WigleFormat.h"
+#include "CoreBinding.h"
 
 int main() {
   assert(updateSoloYieldEma(0, 8, 1000) == 2);
@@ -46,5 +47,21 @@ int main() {
   assert(wigleFrequencyMHz(177) == 5885);
   assert(wigleFrequencyMHz(0) == 0);
   assert(wigleFrequencyMHz(200) == 0);
+
+  uint8_t core_mac[6] = {0};
+  assert(parseCoreMac("AA:BB:CC:DD:EE:02", core_mac));
+  assert(core_mac[0] == 0xAA && core_mac[5] == 0x02);
+  assert(parseCoreMac("aa-bb-cc-dd-ee-02", core_mac));
+  assert(!parseCoreMac("AA:BB:CC:DD:EE", core_mac));
+  assert(!parseCoreMac("AA:BB:CC:DD:EE:GG", core_mac));
+  assert(!parseCoreMac("00:00:00:00:00:00", core_mac));
+  assert(!parseCoreMac("FF:FF:FF:FF:FF:FF", core_mac));
+  assert(!parseCoreMac("AB:BB:CC:DD:EE:02", core_mac));
+  char normalized_core[18];
+  formatCoreMac(core_mac, normalized_core);
+  assert(strcmp(normalized_core, "AA:BB:CC:DD:EE:02") == 0);
+  uint8_t other_core[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
+  assert(coreMacMatches(core_mac, core_mac));
+  assert(!coreMacMatches(core_mac, other_core));
   return 0;
 }
