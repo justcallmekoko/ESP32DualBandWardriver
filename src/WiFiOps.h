@@ -22,7 +22,7 @@
 #include "esp_wifi_types.h"
 #include "mbedtls/sha256.h"
 
-#include <NimBLEDevice.h> // 2.3.0
+#include <NimBLEDevice.h> // 2.3.8 fixes ESP32-C5/C6 controller deinit corruption
 
 extern GpsInterface gps;
 extern SDInterface sd_obj;

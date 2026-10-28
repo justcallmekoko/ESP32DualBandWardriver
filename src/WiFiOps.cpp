@@ -156,6 +156,10 @@ class scanCallbacks : public NimBLEScanCallbacks {
   }
 };
 
+// One callback object survives Dock Mode BLE teardown/reinitialization cycles.
+// NimBLE does not own callback pointers, so allocating one on every init leaks.
+static scanCallbacks ble_scan_callbacks;
+
 int WiFiOps::getAuthType(const wifi_promiscuous_pkt_t *ppkt) {
   if (!ppkt) {
     return WIFI_AUTH_OPEN;
@@ -1985,8 +1989,7 @@ void WiFiOps::deinitBLE() {
     Logger::log(STD_MSG, "BLE already deinitialized, skipping");
     return;
   }
-  ble_initialized = false;
-  Logger::log(STD_MSG, "Deinitializing BLE...");   // existing line continues here
+  Logger::log(STD_MSG, "Deinitializing BLE...");
 
   if (pBLEScan != nullptr) {
     if (pBLEScan->isScanning()) {
@@ -2007,17 +2010,28 @@ void WiFiOps::deinitBLE() {
     pBLEScan->setScanCallbacks(nullptr);
   }
 
-  // Now safe to deinit BLE
-  NimBLEDevice::deinit();
+  // NimBLE 2.3.8 contains the upstream ESP32-C5/C6 controller teardown fix.
+  // Keep the scan singleton allocated (clearAll=false) and reacquire it on init.
+  if (!NimBLEDevice::deinit(false)) {
+    Logger::log(WARN_MSG, "BLE deinitialization failed; leaving lifecycle state active");
+    return;
+  }
+
+  pBLEScan = nullptr;
+  ble_initialized = false;
   Logger::log(STD_MSG, "Finished deinitializing BLE");
 }
 
 void WiFiOps::initBLE() {
+  if (ble_initialized) {
+    Logger::log(STD_MSG, "BLE already initialized, skipping");
+    return;
+  }
+
   NimBLEDevice::init("");
-  //delete pBLEScan;
   pBLEScan = NimBLEDevice::getScan();
 
-  pBLEScan->setScanCallbacks(new scanCallbacks(), false);
+  pBLEScan->setScanCallbacks(&ble_scan_callbacks, false);
   pBLEScan->setActiveScan(true);
   pBLEScan->setDuplicateFilter(false);       // Disables internal filtering based on MAC
   pBLEScan->setMaxResults(0);                // Prevent storing results in NimBLEScanResults
