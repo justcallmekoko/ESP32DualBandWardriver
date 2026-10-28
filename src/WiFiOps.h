@@ -22,7 +22,7 @@
 #include "esp_wifi_types.h"
 #include "mbedtls/sha256.h"
 
-#include <NimBLEDevice.h> // 2.3.0
+#include <NimBLEDevice.h> // 2.3.8 fixes ESP32-C5/C6 controller deinit corruption
 
 extern GpsInterface gps;
 extern SDInterface sd_obj;
@@ -98,6 +98,13 @@ struct NodeRecord {
   uint8_t flags;
 };
 
+struct NodeStatus {
+  uint16_t mac_suffix;
+  uint8_t start_channel;
+  uint8_t end_channel;
+  uint32_t last_seen_seconds;
+};
+
 class WiFiOps
 {
   private:
@@ -113,8 +120,8 @@ class WiFiOps
     uint32_t dock_depart_time = 0;  // timestamp of last dock departure
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
-    const char* apSSID = "c5wardriver";
-    const char* apPassword = "c5wardriver";
+    String admin_ap_ssid = "c5wardriver";
+    String admin_ap_password = "c5wardriver";
 
     WiFiClientSecure *client = new WiFiClientSecure();
 
@@ -210,6 +217,8 @@ class WiFiOps
     bool use_encryption = false;
     bool isDocked() { return dock_state != DOCK_STATE_NONE; }
     uint8_t getNodeCount() { return getActiveNodeCount(); }
+    bool getNodeStatus(uint8_t active_index, NodeStatus& status);
+    String getDeviceMacAddress() const;
 
     uint8_t current_assignment_version = 1;
     uint8_t current_assigned_scan_idx = 0;

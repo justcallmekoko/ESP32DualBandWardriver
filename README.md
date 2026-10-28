@@ -133,7 +133,7 @@ SD card updates remain supported when a browser and direct USB connection are no
 ## Usage
 
 ### Booting
-When powered on, the C5 Wardriver attempts to connect to WiFi using saved credentials. If no credentials are saved or the network is unavailable, it starts its own access point named `c5wardriver` (password: `c5wardriver`). The AP remains active for 60 seconds if no clients connect, or until all clients disconnect.
+When powered on, the C5 Wardriver attempts to connect to WiFi using saved credentials. If no credentials are saved or the network is unavailable, it starts its admin access point. Its default SSID and password are both `c5wardriver`; both can be changed in Admin settings. The AP remains active for 60 seconds if no clients connect, or until all clients disconnect.
 
 If the device connects to a saved WiFi network, the web UI remains available indefinitely — it will stay connected until the network disappears. You can skip the admin phase entirely by holding `SELECT` when the boot logo appears.
 
@@ -145,6 +145,8 @@ On first boot, connect to the `c5wardriver` access point and navigate to `http:/
 - **WDG Wars API key** — for direct log upload to WDGWars
 - **Trigger SSID / Password** — network that triggers dock mode (see [Dock Mode](#dock-mode))
 - **Admin Password** — enables Basic Auth on the web UI
+- **Admin AP SSID / Password** — customizes the fallback configuration access point
+- **Core MAC** — optionally binds a Node to one specific Core
 - **SSID Exclusions** — SSIDs to never log
 - **Geofence Zones** — zones where wardriving pauses
 - **SD Debug Log** — enable to write all log entries to `/debug.log` on the SD card
@@ -165,6 +167,8 @@ Original stats display: firmware version, SD status, battery, scan status, log f
 
 **Screen 3 — Incognito**
 5-second countdown then backlight off. Press any button to exit.
+
+The on-device **Nodes** menu is available from the file/menu screen. In Core mode it lists each active node by the last two MAC bytes, assigned channel block, and seconds since last contact. Use `UP` and `DOWN` to scroll.
 
 ### Buttons
 | Button   | Function |
@@ -217,6 +221,8 @@ Standalone operation. Requires SD card, GPS module, and GPS fix. Logs directly t
 
 ### Node Mode
 Collects wardriving data and sends it to a Core device. Does not require SD card or GPS.
+
+Set **Core MAC** in the web admin settings to bind a Node to a specific Core. Once configured, discovery, heartbeats, assignments, and wardrive records are accepted from or sent to only that Core. Leave the field empty for legacy automatic discovery.
 
 ### Core Mode
 Receives data from Nodes, pairs it with GPS location data, and saves consolidated log files to SD. Requires SD card and GPS. Does not collect wardriving data itself. Supports direct upload to WiGLE and WDGWars.

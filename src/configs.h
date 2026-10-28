@@ -217,7 +217,7 @@
 #define DOCK_FAIL_DISPLAY_MS   20 * 1000   // show K1T failure message for 20s
 #define STANDBY_SCAN_INTERVAL  30 * 1000   // scan for K1T every 30s while in standby (no GPS)
 
-//// Settings JSON buffer — bumped from 2048 to handle 30 settings entries
+//// Settings JSON buffer — bumped from 2048 to handle 32 settings entries
 #define SETTINGS_JSON_SIZE     4096
 
 // ============================================================

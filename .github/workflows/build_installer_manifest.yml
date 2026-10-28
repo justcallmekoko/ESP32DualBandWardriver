@@ -52,11 +52,16 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Install Arduino CLI and ESP32 core
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.4.1
           echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
           export PATH="$PATH:$GITHUB_WORKSPACE/bin"
-          arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.3.0
+          mkdir -p "$HOME/.arduino15"
+          curl -fsSL https://downloads.arduino.cc/packages/package_index.json \
+            -o "$HOME/.arduino15/package_index.json"
+          curl -fsSL https://espressif.github.io/arduino-esp32/package_esp32_index.json \
+            -o "$HOME/.arduino15/package_esp32_index.json"
+          arduino-cli core install esp32:esp32@3.3.0 \
+            --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
       - name: Install firmware build dependencies
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -66,7 +71,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: h2zero/NimBLE-Arduino
-          ref: 2.3.0
+          ref: 2.3.8
           path: build-libraries/CustomNimBLE-Arduino
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
