@@ -99,12 +99,14 @@ The User Buttons require pull-down resistors.
 
 The [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) is the default and recommended method for installing firmware. It runs in a Chromium-based browser with Web Serial support, such as Google Chrome or Microsoft Edge.
 
-1. Connect the ESP32-C5 DevKit to your computer with a USB data cable.
+1. Connect the JCMK C5 Wardriver or LilyGo T-Dongle C5 to your computer with a USB data cable.
 2. Open the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/).
 3. Select the desired hardware and firmware version from the catalog.
 4. Leave **Clean / first install** selected for a new device or a device previously running different firmware.
 5. Read and acknowledge the erase warning, then select **Flash firmware** and choose the ESP32-C5 serial device.
 6. Keep the device connected until the installer reports that flashing is complete, then power-cycle it.
+
+The JCMK C5 Wardriver and LilyGo T-Dongle C5 use the same ESP32-C5 chip, so the installer cannot identify the board variant from the chip alone. Always select the exact connected hardware; flashing the other target can configure incompatible pins and peripherals.
 
 **Clean / first install** erases the device and writes the complete compatible flash layout, including the bootloader, partition table, OTA data, and application. This is required when the existing flash layout is unknown or incompatible.
 
@@ -114,7 +116,7 @@ The [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstall
 
 Use the [C5 Wardriver Installer](https://justcallmekoko.github.io/C5WardriverInstaller/) for normal firmware updates:
 
-1. Connect the ESP32-C5 DevKit to your computer with a USB data cable.
+1. Connect the target device to your computer with a USB data cable.
 2. Select the desired catalog firmware.
 3. Select **Update / preserve settings** when the device already has a compatible C5 Wardriver flash layout.
 4. Select **Flash firmware**, choose the ESP32-C5 serial device, and wait for completion before power-cycling.
