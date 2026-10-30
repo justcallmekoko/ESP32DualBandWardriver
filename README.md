@@ -93,7 +93,7 @@ The User Buttons require pull-down resistors.
 | -------- | -------- |
 | `GPIO8`  | `DOWN`   |
 | `GPIO9`  | `UP`     |
-| `GPIO15` | `SELECT` |
+| `GPIO1`  | `SELECT` |
 
 ## Install Firmware
 
