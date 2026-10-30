@@ -1762,7 +1762,8 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
 
         if (ssid != "") {
           display_string.concat(ssid);
-        }        else {
+        }
+        else {
           display_string.concat(this_bssid);
         }
 
@@ -3200,7 +3201,8 @@ bool WiFiOps::begin(bool skip_admin) {
     } else { // Or run web server loop
       this->last_timer = millis();
 
-      while (this->serving) {        server.handleClient();
+      while (this->serving) {
+        server.handleClient();
         battery.main(millis());
 
         // Stay connected until K1T actually disappears — no inactivity
