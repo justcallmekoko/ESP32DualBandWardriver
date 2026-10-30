@@ -68,6 +68,11 @@ jobs:
       - name: Install firmware build dependencies
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          repository: me-no-dev/AsyncTCP
+          ref: ef448a8a1dffe4ec1b72326dd5a26211ff227b49
+          path: build-libraries/CustomAsyncTCP
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
           repository: stevemarple/MicroNMEA
           ref: v2.0.6
           path: build-libraries/CustomMicroNMEA
