@@ -21,6 +21,9 @@ Switches::Switches(int pin, uint32_t hold_lim, bool pullup) {
 	this->cur_hold = 0;
 	this->isheld = false;
 	
+	if (this->pin < 0)
+		return;
+
   if (pullup)
   	pinMode(this->pin, INPUT_PULLUP);
   else
@@ -42,6 +45,9 @@ bool Switches::isHeld() {
 }
 
 bool Switches::getButtonState() {
+	if (this->pin < 0)
+		return false;
+
 	int buttonState = digitalRead(this->pin);
 	
 	if ((this->pullup) && (buttonState == LOW))

@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: h2zero/NimBLE-Arduino
-          ref: 2.3.0
+          ref: 2.3.8
           path: build-libraries/CustomNimBLE-Arduino
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
