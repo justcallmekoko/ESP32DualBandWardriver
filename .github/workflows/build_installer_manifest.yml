@@ -1,6 +1,7 @@
 name: Build multi-target C5 installer manifest
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - "src/**"
@@ -9,6 +10,9 @@ on:
       - "installer/**"
       - "tools/installer_manifest.py"
       - "tools/test_installer_manifest.py"
+      - "tools/validate_release_bundle.py"
+      - "tools/test_release_bundle.py"
+      - "tools/test_release_workflow.py"
   push:
     branches: [develop, main]
     paths:
@@ -18,8 +22,9 @@ on:
       - "installer/**"
       - "tools/installer_manifest.py"
       - "tools/test_installer_manifest.py"
-  release:
-    types: [published]
+      - "tools/validate_release_bundle.py"
+      - "tools/test_release_bundle.py"
+      - "tools/test_release_workflow.py"
 
 permissions:
   contents: read
@@ -27,14 +32,12 @@ permissions:
 jobs:
   validate:
     name: Validate installer metadata tooling
-    if: ${{ github.event_name != 'release' || github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
       - run: python3 tools/installer_manifest.py --validate-registry
-      - run: python3 -m unittest tools/test_installer_manifest.py -v
+      - run: python3 -m unittest tools/test_installer_manifest.py tools/test_release_bundle.py -v
+      - run: python3 tools/test_release_workflow.py
 
   build:
     name: Rebuild authoritative multi-target C5 release bundle
@@ -42,16 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
-      - name: Record source commit and validate release version
+      - name: Record source commit and firmware version
         run: |
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           VERSION=$(sed -nE 's/^#define FIRMWARE_VERSION "(v[^"]+)"/\1/p' src/configs.h)
           test -n "$VERSION"
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            test "$VERSION" = "${{ github.event.release.tag_name }}"
-          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Install Arduino CLI and ESP32 core
         run: |
@@ -172,23 +170,3 @@ jobs:
           path: release-assets
           if-no-files-found: error
           retention-days: 5
-
-  publish:
-    name: Attach installer assets to published release
-    needs: build
-    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: c5-installer-release-bundle, path: release-assets }
-      - name: Attach additive installer assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            release-assets/*.bin \
-            release-assets/firmware-manifest.json \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
