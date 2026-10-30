@@ -1718,8 +1718,10 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
   // Process results if networks found
   if (networks > 0) {
     for (int i = 0; i < networks; i++) {
+      #ifdef HAS_ACTIVITY_LED
       if (this->run_mode == SOLO_MODE)
         digitalWrite(LED_PIN, HIGH);
+      #endif
       display_string = "";
       do_save = false;
       uint8_t *this_bssid_raw = WiFi.BSSID(i);
@@ -1742,7 +1744,9 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
         if (exclusion_count > 0 &&
             this->isSSIDExcluded(ssid, exclusions, MAX_SSID_EXCLUSIONS)) {
           Logger::log(STD_MSG, "[EXCL] Skipping excluded SSID: \"" + ssid + "\"");
+          #ifdef HAS_ACTIVITY_LED
           digitalWrite(LED_PIN, LOW);
+          #endif
           continue;
         }
         // ---- end exclusion check ----
@@ -1787,8 +1791,10 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
         String wardrive_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + gps.getDatetime() + "," + (String)channel + "," + (String)wigleFrequencyMHz(channel) + "," + (String)WiFi.RSSI(i) + "," + gps.getLat() + "," + gps.getLon() + "," + gps.getAlt() + "," + gps.getAccuracy() + ",,0,WIFI";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + wardrive_line);
 
+        #ifdef HAS_ACTIVITY_LED
         if (this->run_mode == SOLO_MODE)
           digitalWrite(LED_PIN, LOW);
+        #endif
 
         if (do_save) {
           buffer.append(wardrive_line + "\n");
@@ -1805,6 +1811,15 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
           continue;
         }
 
+        // Nodes forward records instead of saving locally, but their display
+        // should still reflect the unique Wi-Fi networks found this cycle.
+        this->setCurrentNetCount(this->getCurrentNetCount() + 1);
+        this->setTotalNetCount(this->getTotalNetCount() + 1);
+        if (WiFi.channel(i) > 14)
+          this->setCurrent5gCount(this->getCurrent5gCount() + 1);
+        else
+          this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
+
         String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
         if (this->use_encryption)
@@ -1815,8 +1830,10 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
     }
   }
 
+  #ifdef HAS_ACTIVITY_LED
   if (this->run_mode == SOLO_MODE)
     digitalWrite(LED_PIN, LOW);
+  #endif
 
   return new_unique_networks;
 }
