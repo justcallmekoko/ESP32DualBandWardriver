@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: me-no-dev/AsyncTCP
-          ref: master
+          ref: ef448a8a1dffe4ec1b72326dd5a26211ff227b49
           path: CustomAsyncTCP
           
       - name: Install MicroNMEA

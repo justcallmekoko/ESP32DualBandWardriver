@@ -64,6 +64,18 @@ class ManifestTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
 
+    def test_installer_and_canonical_build_pin_same_async_tcp(self):
+        expected_ref = "ef448a8a1dffe4ec1b72326dd5a26211ff227b49"
+        workflows = [
+            ROOT / ".github/workflows/wardriver_build_parallel.yml",
+            ROOT / ".github/workflows/build_installer_manifest.yml",
+        ]
+        for workflow in workflows:
+            contents = workflow.read_text(encoding="utf-8")
+            self.assertIn("repository: me-no-dev/AsyncTCP", contents)
+            self.assertIn(f"ref: {expected_ref}", contents)
+            self.assertIn("CustomAsyncTCP", contents)
+
     def test_registry_contains_both_official_targets(self):
         targets = registry(REGISTRY)
         by_id = {target["id"]: target for target in targets}
