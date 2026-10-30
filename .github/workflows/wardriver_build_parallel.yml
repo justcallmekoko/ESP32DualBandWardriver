@@ -24,6 +24,8 @@ jobs:
           /tmp/test_channel_dwell
       - name: Test BLE lifecycle contract
         run: python3 tools/test_ble_lifecycle.py
+      - name: Test Node Wi-Fi counter contract
+        run: python3 tools/test_node_wifi_counters.py
 
   compile_sketch:
     name: build ${{ matrix.board.name }}

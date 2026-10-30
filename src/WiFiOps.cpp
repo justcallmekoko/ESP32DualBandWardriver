@@ -1762,8 +1762,7 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
 
         if (ssid != "") {
           display_string.concat(ssid);
-        }
-        else {
+        }        else {
           display_string.concat(this_bssid);
         }
 
@@ -1810,6 +1809,15 @@ uint16_t WiFiOps::processWardrive(uint16_t networks) {
           Logger::log(STD_MSG, "[EXCL] Node skipping excluded SSID: \"" + ssid + "\"");
           continue;
         }
+
+        // Nodes forward records instead of saving locally, but their display
+        // should still reflect the unique Wi-Fi networks found this cycle.
+        this->setCurrentNetCount(this->getCurrentNetCount() + 1);
+        this->setTotalNetCount(this->getTotalNetCount() + 1);
+        if (WiFi.channel(i) > 14)
+          this->setCurrent5gCount(this->getCurrent5gCount() + 1);
+        else
+          this->setCurrent2g4Count(this->getCurrent2g4Count() + 1);
 
         String enow_line = WiFi.BSSIDstr(i) + "," + ssid + "," + this->security_int_to_string(WiFi.encryptionType(i)) + "," + (String)WiFi.channel(i) + "," + (String)WiFi.RSSI(i) + ",W";
         Logger::log(GUD_MSG, (String)this->mac_history_cursor + " | " + enow_line);
@@ -3192,8 +3200,7 @@ bool WiFiOps::begin(bool skip_admin) {
     } else { // Or run web server loop
       this->last_timer = millis();
 
-      while (this->serving) {
-        server.handleClient();
+      while (this->serving) {        server.handleClient();
         battery.main(millis());
 
         // Stay connected until K1T actually disappears — no inactivity
