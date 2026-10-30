@@ -27,18 +27,22 @@ SPIClass sharedSPI(SPI);
 #ifdef HAS_T_DONGLE_LED
 APA102<T_DONGLE_LED_DATA_PIN, T_DONGLE_LED_CLOCK_PIN> t_dongle_led;
 
+void restoreTDongleSpi() {
+  // APA102 bit-banging changes the shared pins to GPIO outputs. Fully restart
+  // the hardware SPI peripheral so TFT and SD traffic owns GPIO2/GPIO6 again.
+  sharedSPI.end();
+  sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+}
+
 void writeTDongleLed(bool scanning) {
   const uint8_t brightness = scanning ? 10 : 0;
   t_dongle_led.startFrame();
   t_dongle_led.sendColor(0, 0, scanning ? 255 : 0, brightness);
   t_dongle_led.endFrame(1);
-}
 
-void restoreTDongleSpi() {
-  // The APA102 and TFT share MOSI/clock. The software-driven LED frame takes
-  // ownership of those pins, so restore the hardware SPI routing before any
-  // display or SD work in the next loop.
-  sharedSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+  // APA102 has no chip-select, so normal TFT/SD traffic can alter its state.
+  // Reassert it last, then immediately return the shared pins to hardware SPI.
+  restoreTDongleSpi();
 }
 #endif
 
@@ -120,10 +124,7 @@ void setup() {
   Logger::log(GUD_MSG, "Initialization complete!");
 
   #ifdef HAS_T_DONGLE_LED
-    // Setup performs several display and SD transactions. Leave the shared
-    // pins with the LED last and explicitly latch the idle/off state.
-    pinMode(T_DONGLE_LED_DATA_PIN, OUTPUT);
-    pinMode(T_DONGLE_LED_CLOCK_PIN, OUTPUT);
+    // Latch idle/off once, then immediately return GPIO2/GPIO6 to SPI.
     writeTDongleLed(false);
   #endif
 }
@@ -131,10 +132,6 @@ void setup() {
 void loop() {
   // Take current time of this loop for functions
   uint32_t currentTime = millis();
-
-  #ifdef HAS_T_DONGLE_LED
-    restoreTDongleSpi();
-  #endif
 
   // Refresh all functions
   wifi_ops.main(currentTime, ui_obj.stat_display_mode == SD_FILES);
@@ -165,8 +162,8 @@ void loop() {
   }
 
   #ifdef HAS_T_DONGLE_LED
-    // TFT and SD traffic on GPIO2/GPIO6 looks like LED data. Reassert the
-    // intended state last on every loop: blue while scanning, off at idle.
+    // TFT and SD traffic can also clock the chip-select-less APA102. Reassert
+    // its intended state last; writeTDongleLed() immediately restores SPI.
     writeTDongleLed(wifi_ops.getCurrentScanMode() == WIFI_WARDRIVING);
   #endif
 }
