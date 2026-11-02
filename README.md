@@ -28,6 +28,7 @@ unavailable. Stored logs remain uploadable through dock mode and the admin web U
     - [Display Screens](#display-screens)
     - [Buttons](#buttons)
     - [Uploads](#uploads)
+    - [Sanitize Logs with Wardacted](#sanitize-logs-with-wardacted)
     - [Dock Mode](#dock-mode)
     - [Geofence Zones](#geofence-zones)
     - [SSID Exclusions](#ssid-exclusions)
@@ -183,6 +184,12 @@ The on-device **Nodes** menu is available from the file/menu screen. In Core mod
 Log files can be uploaded to WiGLE and WDGWars directly from the web UI or automatically via dock mode. Select a log file from the file list and choose Upload — options are WiGLE, WDGWars, or Both.
 
 Sidecar files (`.wigle` / `.wdg`) are created after successful uploads to prevent duplicate uploads across reboots.
+
+### Sanitize Logs with Wardacted
+
+[Wardacted](https://justcallmekoko.github.io/Wardacted/) is a free browser-based tool for sanitizing wardrive logs before sharing or publishing them. Download a WiGLE CSV log from the C5 Wardriver web UI, open it in Wardacted, then remove records using polygon or circle geofences and optional SSID, MAC address, or regular-expression rules. Single logs and ZIP batches are supported.
+
+Log contents, geofences, filter rules, filenames, network identifiers, and output files remain in the browser. Wardacted sends only the aggregate number of redacted records to its counter. Map tiles are loaded from OpenStreetMap, so the viewed map area is disclosed to that tile service. Direct uploads from the C5 Wardriver do not pass through Wardacted; download and sanitize a log first when redaction is required.
 
 ### Dock Mode
 Dock mode automates log uploads when the wardriver detects a configured trigger SSID.
