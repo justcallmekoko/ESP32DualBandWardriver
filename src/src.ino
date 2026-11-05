@@ -108,13 +108,16 @@ void setup() {
   battery.RunSetup();
   battery.battery_level = battery.getBatteryLevel();
 
-  // Init GPS
-  gps.begin();
-
   ui_obj.begin();
 
+  // Keep the USB serial console available throughout the blocking admin window.
+  // On ESP32-C5, starting the GPS UART first can disrupt console input before a
+  // serial `wardrive` or `mode core` bypass reaches WiFiOps::begin().
   // Init wifi and bluetooth
   wifi_ops.begin(c_btn.justPressed());
+
+  // Init GPS only after admin mode has exited.
+  gps.begin();
 
   // Init UI
   ui_obj.begin();

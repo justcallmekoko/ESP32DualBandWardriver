@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CPP = (ROOT / "src" / "WiFiOps.cpp").read_text(encoding="utf-8")
 HEADER = (ROOT / "src" / "WiFiOps.h").read_text(encoding="utf-8")
+SKETCH = (ROOT / "src" / "src.ino").read_text(encoding="utf-8")
 
 
 def main() -> None:
@@ -16,6 +17,7 @@ def main() -> None:
     assert "wigle6GHzFrequencyMHz(rec.channel)" in CPP
     assert "setCurrent6gCount" in CPP
     assert "current_6g_count" in HEADER
+    assert SKETCH.index("wifi_ops.begin(c_btn.justPressed())") < SKETCH.index("gps.begin()")
 
 
 if __name__ == "__main__":
