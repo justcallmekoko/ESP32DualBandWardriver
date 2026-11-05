@@ -3225,7 +3225,7 @@ bool WiFiOps::begin(bool skip_admin) {
           if (action != AdminSerialAction::NONE) {
             if (action == AdminSerialAction::CORE) {
               this->run_mode = CORE_MODE;
-              settings.saveSetting<int>("m", this->run_mode, true);
+              settings.saveSetting<bool>("m", this->run_mode, true);
             }
             Logger::log(GUD_MSG, "Serial command: leaving admin mode");
             this->shutdownAccessPoint();
@@ -3255,7 +3255,7 @@ bool WiFiOps::begin(bool skip_admin) {
         if (action != AdminSerialAction::NONE) {
           if (action == AdminSerialAction::CORE) {
             this->run_mode = CORE_MODE;
-            settings.saveSetting<int>("m", this->run_mode, true);
+            settings.saveSetting<bool>("m", this->run_mode, true);
           }
           Logger::log(GUD_MSG, "Serial command: leaving admin mode");
           this->shutdownAccessPoint(false);

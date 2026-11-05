@@ -11,7 +11,7 @@ HEADER = (ROOT / "src" / "WiFiOps.h").read_text(encoding="utf-8")
 def main() -> None:
     assert 'strcasecmp(command, "wardrive")' in CPP
     assert 'strcasecmp(command, "mode core")' in CPP
-    assert 'settings.saveSetting<int>("m", this->run_mode, true)' in CPP
+    assert 'settings.saveSetting<bool>("m", this->run_mode, true)' in CPP
     assert 'rec.type == "W6"' in CPP
     assert "wigle6GHzFrequencyMHz(rec.channel)" in CPP
     assert "setCurrent6gCount" in CPP
