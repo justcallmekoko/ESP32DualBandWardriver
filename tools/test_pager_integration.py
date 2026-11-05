@@ -18,8 +18,10 @@ def main() -> None:
     assert "setCurrent6gCount" in CPP
     assert "current_6g_count" in HEADER
     assert "MSG_RECORD_ACK     = 6" in CPP
-    assert "sendRecordAck(info->src_addr, t->counter" in CPP
-    assert 'rec.type + "," + String(frequency)' in CPP
+    assert "xQueueSend(g_record_ack_queue, &pending, 0)" in CPP
+    assert "drainRecordAcks();" in CPP
+    assert "if (!wifi_ops.use_encryption" in CPP
+    assert "snprintf(msg.text" in CPP
     assert SKETCH.index("wifi_ops.begin(c_btn.justPressed())") < SKETCH.index("gps.begin()")
 
 

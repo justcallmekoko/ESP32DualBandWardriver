@@ -5,6 +5,8 @@
 #include "CoreBinding.h"
 #include "esp_mac.h"
 #include "esp_task_wdt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -98,6 +100,32 @@ enum MsgType : uint8_t {
   MSG_ADMIN          = 5,
   MSG_RECORD_ACK     = 6
 };
+
+struct PendingRecordAck {
+  uint8_t dest[6];
+  uint32_t counter;
+  char record_type[3];
+  uint16_t frequency;
+};
+
+static QueueHandle_t g_record_ack_queue = nullptr;
+
+static void drainRecordAcks() {
+  if (!g_record_ack_queue) return;
+
+  PendingRecordAck pending = {};
+  while (xQueueReceive(g_record_ack_queue, &pending, 0) == pdTRUE) {
+    if (!esp_now_is_peer_exist(pending.dest)) continue;
+
+    enow_text_msg_t msg = {};
+    memcpy(msg.magic, MAGIC, 4);
+    msg.type = MSG_RECORD_ACK;
+    msg.counter = pending.counter;
+    msg.len = (uint16_t)snprintf(msg.text, sizeof(msg.text), "%s,%u",
+                                 pending.record_type, pending.frequency);
+    esp_now_send(pending.dest, (uint8_t*)&msg, sizeof(msg));
+  }
+}
 
 enum class AdminSerialAction : uint8_t { NONE, WARDRIVE, CORE };
 
@@ -739,22 +767,6 @@ void WiFiOps::sendCoreRequest() {
                 (unsigned long)g_req_interval_ms);
 }
 
-void WiFiOps::sendRecordAck(const uint8_t* destMac, uint32_t counter, const String& detail) {
-  enow_text_msg_t msg = {};
-  memcpy(msg.magic, MAGIC, 4);
-  msg.type = MSG_RECORD_ACK;
-  msg.counter = counter;
-
-  size_t n = detail.length();
-  if (n > ENOW_TEXT_MAX) n = ENOW_TEXT_MAX;
-  memcpy(msg.text, detail.c_str(), n);
-  msg.text[n] = '\0';
-  msg.len = (uint16_t)n;
-
-  if (!addPeerWithMode(destMac, false, nullptr)) return;
-  esp_now_send(destMac, (uint8_t*)&msg, sizeof(msg));
-}
-
 void WiFiOps::sendCoreReply(const uint8_t* destMac) {
   enow_text_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
@@ -1148,9 +1160,17 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
           const uint16_t frequency = type == "WIFI"
             ? (is_6ghz ? wigle6GHzFrequencyMHz(rec.channel) : wigleFrequencyMHz(rec.channel)) : 0;
 
-          // Confirm that the Core parsed the record and computed its frequency.
-          wifi_ops.sendRecordAck(info->src_addr, t->counter,
-                                 rec.type + "," + String(frequency));
+          // Defer the ACK out of the Wi-Fi receive callback. Pager integration
+          // is plaintext-only; never alter or downgrade an encrypted peer.
+          if (!wifi_ops.use_encryption && g_record_ack_queue &&
+              esp_now_is_peer_exist(info->src_addr)) {
+            PendingRecordAck pending = {};
+            memcpy(pending.dest, info->src_addr, sizeof(pending.dest));
+            pending.counter = t->counter;
+            rec.type.substring(0, 2).toCharArray(pending.record_type, sizeof(pending.record_type));
+            pending.frequency = frequency;
+            xQueueSend(g_record_ack_queue, &pending, 0);
+          }
 
           if (!wifi_ops.seen_mac(bssid)) {
             wifi_ops.save_mac(bssid);
@@ -1300,6 +1320,9 @@ void WiFiOps::startESPNow() {
   if (esp_now_set_pmk(pmk) != ESP_OK) {
     Logger::log(WARN_MSG, "Warning: esp_now_set_pmk failed");
   }
+
+  if (!g_record_ack_queue)
+    g_record_ack_queue = xQueueCreate(8, sizeof(PendingRecordAck));
 
   esp_now_register_recv_cb(OnDataRecv);
 
@@ -3629,6 +3652,8 @@ void WiFiOps::departDock() {
 // ============================================================
 
 void WiFiOps::main(uint32_t currentTime, bool in_sd_files) {
+  drainRecordAcks();
+
   // Chunk 6: dock mode takes priority over normal wardrive cycle
   if (this->dock_state != DOCK_STATE_NONE) {
     this->runDockMode(currentTime);
