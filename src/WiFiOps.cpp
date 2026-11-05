@@ -722,7 +722,9 @@ bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
   msg.start_channel_idx = node_table[slot].start_channel_idx;
   msg.end_channel_idx = node_table[slot].end_channel_idx;
 
-  // Temporary plaintext peer
+  // Preserve an existing peer and its encryption mode. Only remove a peer
+  // when this function created it temporarily for the admin response.
+  bool temporaryPeer = false;
   if (!esp_now_is_peer_exist(dest_mac)) {
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, dest_mac, 6);
@@ -732,6 +734,7 @@ bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
       return false;
     }
+    temporaryPeer = true;
   }
 
   esp_err_t res = esp_now_send(dest_mac, (uint8_t*)&msg, sizeof(msg));
@@ -739,11 +742,11 @@ bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
     char macStr[18];
     utils.macToStr(dest_mac, macStr);
     Serial.printf("ESPNOW send failed to %s err=%d\n", macStr, res);
-    esp_now_del_peer(dest_mac);
+    if (temporaryPeer) esp_now_del_peer(dest_mac);
     return false;
   }
 
-  esp_now_del_peer(dest_mac);
+  if (temporaryPeer) esp_now_del_peer(dest_mac);
 
   node_table[slot].last_admin_version_sent = wifi_ops.current_assignment_version;
   node_table[slot].flags &= ~NODE_FLAG_ADMIN_DIRTY;

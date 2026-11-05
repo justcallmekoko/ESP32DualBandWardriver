@@ -22,6 +22,8 @@ def main() -> None:
     assert "drainRecordAcks();" in CPP
     assert "if (!wifi_ops.use_encryption" in CPP
     assert "snprintf(msg.text" in CPP
+    assert "bool temporaryPeer = false;" in CPP
+    assert "if (temporaryPeer) esp_now_del_peer(dest_mac);" in CPP
     assert SKETCH.index("wifi_ops.begin(c_btn.justPressed())") < SKETCH.index("gps.begin()")
 
 
