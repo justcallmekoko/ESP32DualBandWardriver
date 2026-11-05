@@ -95,7 +95,8 @@ enum MsgType : uint8_t {
   MSG_CORE_REPLY     = 2,
   MSG_HEARTBEAT      = 3,
   MSG_TEXT           = 4,
-  MSG_ADMIN          = 5
+  MSG_ADMIN          = 5,
+  MSG_RECORD_ACK     = 6
 };
 
 enum class AdminSerialAction : uint8_t { NONE, WARDRIVE, CORE };
@@ -738,6 +739,22 @@ void WiFiOps::sendCoreRequest() {
                 (unsigned long)g_req_interval_ms);
 }
 
+void WiFiOps::sendRecordAck(const uint8_t* destMac, uint32_t counter, const String& detail) {
+  enow_text_msg_t msg = {};
+  memcpy(msg.magic, MAGIC, 4);
+  msg.type = MSG_RECORD_ACK;
+  msg.counter = counter;
+
+  size_t n = detail.length();
+  if (n > ENOW_TEXT_MAX) n = ENOW_TEXT_MAX;
+  memcpy(msg.text, detail.c_str(), n);
+  msg.text[n] = '\0';
+  msg.len = (uint16_t)n;
+
+  if (!addPeerWithMode(destMac, false, nullptr)) return;
+  esp_now_send(destMac, (uint8_t*)&msg, sizeof(msg));
+}
+
 void WiFiOps::sendCoreReply(const uint8_t* destMac) {
   enow_text_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
@@ -1123,16 +1140,20 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
           uint8_t bssid[6] = {0};
           utils.convertMacStringToUint8(rec.bssid, bssid);
 
+          String type = "WIFI";
+          if (rec.type == "B")
+            type = "BLE";
+
+          const bool is_6ghz = rec.type == "W6";
+          const uint16_t frequency = type == "WIFI"
+            ? (is_6ghz ? wigle6GHzFrequencyMHz(rec.channel) : wigleFrequencyMHz(rec.channel)) : 0;
+
+          // Confirm that the Core parsed the record and computed its frequency.
+          wifi_ops.sendRecordAck(info->src_addr, t->counter,
+                                 rec.type + "," + String(frequency));
+
           if (!wifi_ops.seen_mac(bssid)) {
             wifi_ops.save_mac(bssid);
-
-            String type = "WIFI";
-            if (rec.type == "B")
-              type = "BLE";
-
-            const bool is_6ghz = rec.type == "W6";
-            const uint16_t frequency = type == "WIFI"
-              ? (is_6ghz ? wigle6GHzFrequencyMHz(rec.channel) : wigleFrequencyMHz(rec.channel)) : 0;
             String wardrive_line =
               rec.bssid + "," +
               rec.essid + "," +

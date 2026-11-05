@@ -17,6 +17,9 @@ def main() -> None:
     assert "wigle6GHzFrequencyMHz(rec.channel)" in CPP
     assert "setCurrent6gCount" in CPP
     assert "current_6g_count" in HEADER
+    assert "MSG_RECORD_ACK     = 6" in CPP
+    assert "sendRecordAck(info->src_addr, t->counter" in CPP
+    assert 'rec.type + "," + String(frequency)' in CPP
     assert SKETCH.index("wifi_ops.begin(c_btn.justPressed())") < SKETCH.index("gps.begin()")
 
 

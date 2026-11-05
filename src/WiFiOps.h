@@ -303,6 +303,7 @@ class WiFiOps
     static bool addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lmk16[16]);
     static void sendCoreRequest();
     static void sendCoreReply(const uint8_t* destMac);
+    static void sendRecordAck(const uint8_t* destMac, uint32_t counter, const String& detail);
     static bool sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac);
     static void sendHeartbeat();
     static void OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
