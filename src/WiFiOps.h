@@ -139,6 +139,7 @@ class WiFiOps
     uint32_t current_net_count = 0;
     uint32_t current_2g4_count = 0;
     uint32_t current_5g_count = 0;
+    uint32_t current_6g_count = 0;
     uint32_t current_ble_count = 0;
     uint32_t total_net_count = 0;
     uint32_t total_ble_count = 0;
@@ -269,12 +270,14 @@ class WiFiOps
     void setCurrentNetCount(uint32_t count);
     void setCurrent2g4Count(uint32_t count);
     void setCurrent5gCount(uint32_t count);
+    void setCurrent6gCount(uint32_t count);
     void setCurrentBLECount(uint32_t count);
     uint32_t getTotalNetCount();
     uint32_t getTotalBLECount();
     uint32_t getCurrentNetCount();
     uint32_t getCurrent2g4Count();
     uint32_t getCurrent5gCount();
+    uint32_t getCurrent6gCount();
     uint32_t getCurrentBLECount();
     size_t getSoloChannelCount();
     uint8_t getSoloChannel(size_t index);

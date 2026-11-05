@@ -98,6 +98,26 @@ enum MsgType : uint8_t {
   MSG_ADMIN          = 5
 };
 
+enum class AdminSerialAction : uint8_t { NONE, WARDRIVE, CORE };
+
+static AdminSerialAction pollAdminSerialAction() {
+  static char command[24] = {};
+  static size_t length = 0;
+  while (Serial.available()) {
+    const char c = (char)Serial.read();
+    if (c == '\r' || c == '\n') {
+      command[length] = '\0';
+      length = 0;
+      if (!strcasecmp(command, "wardrive")) return AdminSerialAction::WARDRIVE;
+      if (!strcasecmp(command, "mode core")) return AdminSerialAction::CORE;
+      command[0] = '\0';
+    } else if (c >= 0x20 && c <= 0x7e && length + 1 < sizeof(command)) {
+      command[length++] = c;
+    }
+  }
+  return AdminSerialAction::NONE;
+}
+
 WebServer server(80);
 
 
@@ -1110,7 +1130,9 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
             if (rec.type == "B")
               type = "BLE";
 
-            const uint16_t frequency = type == "WIFI" ? wigleFrequencyMHz(rec.channel) : 0;
+            const bool is_6ghz = rec.type == "W6";
+            const uint16_t frequency = type == "WIFI"
+              ? (is_6ghz ? wigle6GHzFrequencyMHz(rec.channel) : wigleFrequencyMHz(rec.channel)) : 0;
             String wardrive_line =
               rec.bssid + "," +
               rec.essid + "," +
@@ -1132,7 +1154,9 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                 wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
                 wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
 
-                if (rec.channel > 14) {
+                if (is_6ghz) {
+                  wifi_ops.setCurrent6gCount(wifi_ops.getCurrent6gCount() + 1);
+                } else if (rec.channel > 14) {
                   wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
                 } else {
                   wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
@@ -1147,6 +1171,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
               // Roll log file if entry limit reached
               uint32_t total_entries = wifi_ops.getCurrent2g4Count() +
               wifi_ops.getCurrent5gCount() +
+              wifi_ops.getCurrent6gCount() +
               wifi_ops.getCurrentBLECount();
               if (total_entries >= LOG_ROLL_ENTRIES) {
                 Logger::log(STD_MSG, "[LOG] Rolling log — " +
@@ -1154,6 +1179,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                 wifi_ops.startLog(LOG_FILE_NAME);
                 wifi_ops.setCurrent2g4Count(0);
                 wifi_ops.setCurrent5gCount(0);
+                wifi_ops.setCurrent6gCount(0);
                 wifi_ops.setCurrentBLECount(0);
                 wifi_ops.setCurrentNetCount(0);
               }
@@ -1350,6 +1376,10 @@ void WiFiOps::setCurrent5gCount(uint32_t count) {
   this->current_5g_count = count;
 }
 
+void WiFiOps::setCurrent6gCount(uint32_t count) {
+  this->current_6g_count = count;
+}
+
 void WiFiOps::setCurrentBLECount(uint32_t count) {
   this->current_ble_count = count;
 }
@@ -1372,6 +1402,10 @@ uint32_t WiFiOps::getCurrent2g4Count() {
 
 uint32_t WiFiOps::getCurrent5gCount() {
   return this->current_5g_count;
+}
+
+uint32_t WiFiOps::getCurrent6gCount() {
+  return this->current_6g_count;
 }
 
 uint32_t WiFiOps::getCurrentBLECount() {
@@ -1455,6 +1489,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
           this->current_ble_count = 0;
           this->current_2g4_count = 0;
           this->current_5g_count = 0;
+          this->current_6g_count = 0;
           solo_reset_counters_on_result = false;
         }
 
@@ -3186,6 +3221,17 @@ bool WiFiOps::begin(bool skip_admin) {
         while (true) {
           server.handleClient();
 
+          AdminSerialAction action = pollAdminSerialAction();
+          if (action != AdminSerialAction::NONE) {
+            if (action == AdminSerialAction::CORE) {
+              this->run_mode = CORE_MODE;
+              settings.saveSetting<int>("m", this->run_mode, true);
+            }
+            Logger::log(GUD_MSG, "Serial command: leaving admin mode");
+            this->shutdownAccessPoint();
+            break;
+          }
+
           static bool wasConnected = WiFi.softAPgetStationNum() > 0;
           bool nowConnected = WiFi.softAPgetStationNum() > 0;
 
@@ -3204,6 +3250,17 @@ bool WiFiOps::begin(bool skip_admin) {
       while (this->serving) {
         server.handleClient();
         battery.main(millis());
+
+        AdminSerialAction action = pollAdminSerialAction();
+        if (action != AdminSerialAction::NONE) {
+          if (action == AdminSerialAction::CORE) {
+            this->run_mode = CORE_MODE;
+            settings.saveSetting<int>("m", this->run_mode, true);
+          }
+          Logger::log(GUD_MSG, "Serial command: leaving admin mode");
+          this->shutdownAccessPoint(false);
+          break;
+        }
 
         // Stay connected until K1T actually disappears — no inactivity
         // timeout when connected as a client to a known WLAN.
