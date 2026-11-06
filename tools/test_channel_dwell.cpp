@@ -47,6 +47,10 @@ int main() {
   assert(wigleFrequencyMHz(177) == 5885);
   assert(wigleFrequencyMHz(0) == 0);
   assert(wigleFrequencyMHz(200) == 0);
+  assert(wigle6GHzFrequencyMHz(1) == 5955);
+  assert(wigle6GHzFrequencyMHz(5) == 5975);
+  assert(wigle6GHzFrequencyMHz(233) == 7115);
+  assert(wigle6GHzFrequencyMHz(2) == 0);
 
   uint8_t core_mac[6] = {0};
   assert(parseCoreMac("AA:BB:CC:DD:EE:02", core_mac));

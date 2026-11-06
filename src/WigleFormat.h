@@ -16,3 +16,8 @@ constexpr uint16_t wigleFrequencyMHz(uint16_t channel) {
     return 5000 + (channel * 5);
   return 0;
 }
+
+constexpr uint16_t wigle6GHzFrequencyMHz(uint16_t channel) {
+  return channel >= 1 && channel <= 233 && (channel - 1) % 4 == 0
+    ? 5950 + (channel * 5) : 0;
+}

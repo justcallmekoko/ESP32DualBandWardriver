@@ -5,6 +5,8 @@
 #include "CoreBinding.h"
 #include "esp_mac.h"
 #include "esp_task_wdt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -95,8 +97,73 @@ enum MsgType : uint8_t {
   MSG_CORE_REPLY     = 2,
   MSG_HEARTBEAT      = 3,
   MSG_TEXT           = 4,
-  MSG_ADMIN          = 5
+  MSG_ADMIN          = 5,
+  MSG_RECORD_ACK     = 6
 };
+
+static bool registerExternal6GCapabilities(
+  int slot,
+  const enow_text_msg_t* msg,
+  const char* src_mac
+) {
+  const size_t capability_len = sizeof(NODE_CAPABILITY_EXTERNAL_6G) - 1;
+  if (slot < 0 || msg->len != capability_len ||
+      memcmp(msg->text, NODE_CAPABILITY_EXTERNAL_6G, capability_len) != 0 ||
+      (node_table[slot].flags & NODE_FLAG_EXTERNAL_6G)) {
+    return false;
+  }
+
+  node_table[slot].flags |= NODE_FLAG_EXTERNAL_6G;
+  node_table[slot].flags &= ~NODE_FLAG_ADMIN_DIRTY;
+  Serial.printf("CORE: %s registered as external 6 GHz scan-only node\n", src_mac);
+  return true;
+}
+
+struct PendingRecordAck {
+  uint8_t dest[6];
+  uint32_t counter;
+  char record_type[3];
+  uint16_t frequency;
+};
+
+static QueueHandle_t g_record_ack_queue = nullptr;
+
+static void drainRecordAcks() {
+  if (!g_record_ack_queue) return;
+
+  PendingRecordAck pending = {};
+  while (xQueueReceive(g_record_ack_queue, &pending, 0) == pdTRUE) {
+    if (!esp_now_is_peer_exist(pending.dest)) continue;
+
+    enow_text_msg_t msg = {};
+    memcpy(msg.magic, MAGIC, 4);
+    msg.type = MSG_RECORD_ACK;
+    msg.counter = pending.counter;
+    msg.len = (uint16_t)snprintf(msg.text, sizeof(msg.text), "%s,%u",
+                                 pending.record_type, pending.frequency);
+    esp_now_send(pending.dest, (uint8_t*)&msg, sizeof(msg));
+  }
+}
+
+enum class AdminSerialAction : uint8_t { NONE, WARDRIVE, CORE };
+
+static AdminSerialAction pollAdminSerialAction() {
+  static char command[24] = {};
+  static size_t length = 0;
+  while (Serial.available()) {
+    const char c = (char)Serial.read();
+    if (c == '\r' || c == '\n') {
+      command[length] = '\0';
+      length = 0;
+      if (!strcasecmp(command, "wardrive")) return AdminSerialAction::WARDRIVE;
+      if (!strcasecmp(command, "mode core")) return AdminSerialAction::CORE;
+      command[0] = '\0';
+    } else if (c >= 0x20 && c <= 0x7e && length + 1 < sizeof(command)) {
+      command[length++] = c;
+    }
+  }
+  return AdminSerialAction::NONE;
+}
 
 WebServer server(80);
 
@@ -501,7 +568,8 @@ void WiFiOps::recalculateChannelAssignments() {
   uint8_t active_count = 0;
 
   for (uint8_t i = 0; i < MAX_NODES; i++) {
-    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
       active_slots[active_count++] = i;
     }
   }
@@ -543,6 +611,19 @@ uint8_t WiFiOps::getActiveNodeCount() {
   return count;
 }
 
+uint8_t WiFiOps::getAssignableNodeCount() {
+  uint8_t count = 0;
+
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
 bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
   uint8_t current = 0;
   const uint32_t now = millis();
@@ -554,6 +635,7 @@ bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
     status.start_channel = getNodeStartChannel(slot);
     status.end_channel = getNodeEndChannel(slot);
     status.last_seen_seconds = (now - node_table[slot].last_seen_ms) / 1000;
+    status.external_6g = node_table[slot].flags & NODE_FLAG_EXTERNAL_6G;
     return true;
   }
   return false;
@@ -561,8 +643,11 @@ bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
 
 void WiFiOps::markAllActiveNodesAdminDirty() {
   for (uint8_t i = 0; i < MAX_NODES; i++) {
-    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
       node_table[i].flags |= NODE_FLAG_ADMIN_DIRTY;
+    } else {
+      node_table[i].flags &= ~NODE_FLAG_ADMIN_DIRTY;
     }
   }
 }
@@ -592,17 +677,24 @@ void WiFiOps::debugPrintNodeTable() {
 
     uint32_t age = millis() - node_table[i].last_seen_ms;
 
-    Serial.printf(
-      "Slot %u | MAC:%04X | idx:%u | ch:%u-%u | ver:%u | flags:0x%02X | age:%lu ms\n",
-      i,
-      node_table[i].mac_suffix,
-      node_table[i].assigned_index,
-      start_ch,
-      end_ch,
-      node_table[i].last_admin_version_sent,
-      node_table[i].flags,
-      age
-    );
+    if (node_table[i].flags & NODE_FLAG_EXTERNAL_6G) {
+      Serial.printf(
+        "Slot %u | MAC:%04X | external 6 GHz | flags:0x%02X | age:%lu ms\n",
+        i, node_table[i].mac_suffix, node_table[i].flags, age
+      );
+    } else {
+      Serial.printf(
+        "Slot %u | MAC:%04X | idx:%u | ch:%u-%u | ver:%u | flags:0x%02X | age:%lu ms\n",
+        i,
+        node_table[i].mac_suffix,
+        node_table[i].assigned_index,
+        start_ch,
+        end_ch,
+        node_table[i].last_admin_version_sent,
+        node_table[i].flags,
+        age
+      );
+    }
   }
 
   Serial.println("======================\n");
@@ -662,18 +754,21 @@ bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lm
 bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
   extern WiFiOps wifi_ops;
 
-  if (!(node_table[slot].flags & NODE_FLAG_ACTIVE)) return false;
+  if (!(node_table[slot].flags & NODE_FLAG_ACTIVE) ||
+      (node_table[slot].flags & NODE_FLAG_EXTERNAL_6G)) return false;
 
   enow_admin_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
   msg.type = MSG_ADMIN;
   msg.assignment_version = wifi_ops.current_assignment_version;
   msg.node_index = node_table[slot].assigned_index;
-  msg.node_count = wifi_ops.getActiveNodeCount();
+  msg.node_count = wifi_ops.getAssignableNodeCount();
   msg.start_channel_idx = node_table[slot].start_channel_idx;
   msg.end_channel_idx = node_table[slot].end_channel_idx;
 
-  // Temporary plaintext peer
+  // Preserve an existing peer and its encryption mode. Only remove a peer
+  // when this function created it temporarily for the admin response.
+  bool temporaryPeer = false;
   if (!esp_now_is_peer_exist(dest_mac)) {
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, dest_mac, 6);
@@ -683,6 +778,7 @@ bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
       return false;
     }
+    temporaryPeer = true;
   }
 
   esp_err_t res = esp_now_send(dest_mac, (uint8_t*)&msg, sizeof(msg));
@@ -690,11 +786,11 @@ bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
     char macStr[18];
     utils.macToStr(dest_mac, macStr);
     Serial.printf("ESPNOW send failed to %s err=%d\n", macStr, res);
-    esp_now_del_peer(dest_mac);
+    if (temporaryPeer) esp_now_del_peer(dest_mac);
     return false;
   }
 
-  esp_now_del_peer(dest_mac);
+  if (temporaryPeer) esp_now_del_peer(dest_mac);
 
   node_table[slot].last_admin_version_sent = wifi_ops.current_assignment_version;
   node_table[slot].flags &= ~NODE_FLAG_ADMIN_DIRTY;
@@ -1020,8 +1116,12 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
 
       Serial.printf("CORE: RX CORE_REQUEST from %s | RSSI %d dBm\n", srcMacStr, rssi);
 
-      // Track node regardless of encryption success
+      // Track node regardless of encryption success. Capability classification
+      // happens before allocation so external 6 GHz nodes never consume a
+      // 2.4/5 GHz channel range.
       slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+      const bool capabilitiesChanged =
+        registerExternal6GCapabilities(slot, msg, srcMacStr);
 
       // Plaintext reply so node can learn CORE MAC
       wifi_ops.sendCoreReply(info->src_addr);
@@ -1038,7 +1138,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
         }
       }
 
-      if (slot >= 0 && isNewNode) {
+      if (slot >= 0 && (isNewNode || capabilitiesChanged)) {
         wifi_ops.handleNodeTopologyChange();
       }
 
@@ -1063,8 +1163,10 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                     srcMacStr, rssi, (unsigned long)msg->counter);
 
       slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+      const bool capabilitiesChanged =
+        registerExternal6GCapabilities(slot, msg, srcMacStr);
 
-      if (slot >= 0 && isNewNode) {
+      if (slot >= 0 && (isNewNode || capabilitiesChanged)) {
         wifi_ops.handleNodeTopologyChange();
       }
 
@@ -1103,14 +1205,28 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
           uint8_t bssid[6] = {0};
           utils.convertMacStringToUint8(rec.bssid, bssid);
 
+          String type = "WIFI";
+          if (rec.type == "B")
+            type = "BLE";
+
+          const bool is_6ghz = rec.type == "W6";
+          const uint16_t frequency = type == "WIFI"
+            ? (is_6ghz ? wigle6GHzFrequencyMHz(rec.channel) : wigleFrequencyMHz(rec.channel)) : 0;
+
+          // Defer the ACK out of the Wi-Fi receive callback. Pager integration
+          // is plaintext-only; never alter or downgrade an encrypted peer.
+          if (!wifi_ops.use_encryption && g_record_ack_queue &&
+              esp_now_is_peer_exist(info->src_addr)) {
+            PendingRecordAck pending = {};
+            memcpy(pending.dest, info->src_addr, sizeof(pending.dest));
+            pending.counter = t->counter;
+            rec.type.substring(0, 2).toCharArray(pending.record_type, sizeof(pending.record_type));
+            pending.frequency = frequency;
+            xQueueSend(g_record_ack_queue, &pending, 0);
+          }
+
           if (!wifi_ops.seen_mac(bssid)) {
             wifi_ops.save_mac(bssid);
-
-            String type = "WIFI";
-            if (rec.type == "B")
-              type = "BLE";
-
-            const uint16_t frequency = type == "WIFI" ? wigleFrequencyMHz(rec.channel) : 0;
             String wardrive_line =
               rec.bssid + "," +
               rec.essid + "," +
@@ -1132,7 +1248,9 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                 wifi_ops.setCurrentNetCount(wifi_ops.getCurrentNetCount() + 1);
                 wifi_ops.setTotalNetCount(wifi_ops.getTotalNetCount() + 1);
 
-                if (rec.channel > 14) {
+                if (is_6ghz) {
+                  wifi_ops.setCurrent6gCount(wifi_ops.getCurrent6gCount() + 1);
+                } else if (rec.channel > 14) {
                   wifi_ops.setCurrent5gCount(wifi_ops.getCurrent5gCount() + 1);
                 } else {
                   wifi_ops.setCurrent2g4Count(wifi_ops.getCurrent2g4Count() + 1);
@@ -1147,6 +1265,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
               // Roll log file if entry limit reached
               uint32_t total_entries = wifi_ops.getCurrent2g4Count() +
               wifi_ops.getCurrent5gCount() +
+              wifi_ops.getCurrent6gCount() +
               wifi_ops.getCurrentBLECount();
               if (total_entries >= LOG_ROLL_ENTRIES) {
                 Logger::log(STD_MSG, "[LOG] Rolling log — " +
@@ -1154,6 +1273,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                 wifi_ops.startLog(LOG_FILE_NAME);
                 wifi_ops.setCurrent2g4Count(0);
                 wifi_ops.setCurrent5gCount(0);
+                wifi_ops.setCurrent6gCount(0);
                 wifi_ops.setCurrentBLECount(0);
                 wifi_ops.setCurrentNetCount(0);
               }
@@ -1254,6 +1374,9 @@ void WiFiOps::startESPNow() {
     Logger::log(WARN_MSG, "Warning: esp_now_set_pmk failed");
   }
 
+  if (!g_record_ack_queue)
+    g_record_ack_queue = xQueueCreate(8, sizeof(PendingRecordAck));
+
   esp_now_register_recv_cb(OnDataRecv);
 
   if (this->run_mode == CORE_MODE) {
@@ -1350,6 +1473,10 @@ void WiFiOps::setCurrent5gCount(uint32_t count) {
   this->current_5g_count = count;
 }
 
+void WiFiOps::setCurrent6gCount(uint32_t count) {
+  this->current_6g_count = count;
+}
+
 void WiFiOps::setCurrentBLECount(uint32_t count) {
   this->current_ble_count = count;
 }
@@ -1372,6 +1499,10 @@ uint32_t WiFiOps::getCurrent2g4Count() {
 
 uint32_t WiFiOps::getCurrent5gCount() {
   return this->current_5g_count;
+}
+
+uint32_t WiFiOps::getCurrent6gCount() {
+  return this->current_6g_count;
 }
 
 uint32_t WiFiOps::getCurrentBLECount() {
@@ -1455,6 +1586,7 @@ int WiFiOps::runWardrive(uint32_t currentTime) {
           this->current_ble_count = 0;
           this->current_2g4_count = 0;
           this->current_5g_count = 0;
+          this->current_6g_count = 0;
           solo_reset_counters_on_result = false;
         }
 
@@ -3186,6 +3318,17 @@ bool WiFiOps::begin(bool skip_admin) {
         while (true) {
           server.handleClient();
 
+          AdminSerialAction action = pollAdminSerialAction();
+          if (action != AdminSerialAction::NONE) {
+            if (action == AdminSerialAction::CORE) {
+              this->run_mode = CORE_MODE;
+              settings.saveSetting<bool>("m", this->run_mode, true);
+            }
+            Logger::log(GUD_MSG, "Serial command: leaving admin mode");
+            this->shutdownAccessPoint();
+            break;
+          }
+
           static bool wasConnected = WiFi.softAPgetStationNum() > 0;
           bool nowConnected = WiFi.softAPgetStationNum() > 0;
 
@@ -3204,6 +3347,17 @@ bool WiFiOps::begin(bool skip_admin) {
       while (this->serving) {
         server.handleClient();
         battery.main(millis());
+
+        AdminSerialAction action = pollAdminSerialAction();
+        if (action != AdminSerialAction::NONE) {
+          if (action == AdminSerialAction::CORE) {
+            this->run_mode = CORE_MODE;
+            settings.saveSetting<bool>("m", this->run_mode, true);
+          }
+          Logger::log(GUD_MSG, "Serial command: leaving admin mode");
+          this->shutdownAccessPoint(false);
+          break;
+        }
 
         // Stay connected until K1T actually disappears — no inactivity
         // timeout when connected as a client to a known WLAN.
@@ -3551,6 +3705,8 @@ void WiFiOps::departDock() {
 // ============================================================
 
 void WiFiOps::main(uint32_t currentTime, bool in_sd_files) {
+  drainRecordAcks();
+
   // Chunk 6: dock mode takes priority over normal wardrive cycle
   if (this->dock_state != DOCK_STATE_NONE) {
     this->runDockMode(currentTime);
