@@ -797,9 +797,13 @@ void UI::buildNodesMenu(bool preserve_selection) {
       if (!wifi_ops.getNodeStatus(index, status)) continue;
       char suffix[6];
       WiFiOps::macSuffixToStr(status.mac_suffix, suffix);
-      String row = String(suffix) + " " + String(status.start_channel) + "-" +
-                   String(status.end_channel) + " " +
-                   String(status.last_seen_seconds) + "s";
+      String row = String(suffix) + " ";
+      if (status.external_6g) {
+        row += "6G EXT ";
+      } else {
+        row += String(status.start_channel) + "-" + String(status.end_channel) + " ";
+      }
+      row += String(status.last_seen_seconds) + "s";
       this->addNodes(&nodes_menu, row, ST77XX_WHITE, NULL, 0, []() {});
     }
   }
