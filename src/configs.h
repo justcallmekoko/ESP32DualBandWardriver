@@ -30,7 +30,7 @@
 #endif
 
 //// Firmware info stuff
-#define FIRMWARE_VERSION "v2.4.0"
+#define FIRMWARE_VERSION "v2.4.1"
 
 //// Role stuff
 #define SOLO

@@ -101,6 +101,24 @@ enum MsgType : uint8_t {
   MSG_RECORD_ACK     = 6
 };
 
+static bool registerExternal6GCapabilities(
+  int slot,
+  const enow_text_msg_t* msg,
+  const char* src_mac
+) {
+  const size_t capability_len = sizeof(NODE_CAPABILITY_EXTERNAL_6G) - 1;
+  if (slot < 0 || msg->len != capability_len ||
+      memcmp(msg->text, NODE_CAPABILITY_EXTERNAL_6G, capability_len) != 0 ||
+      (node_table[slot].flags & NODE_FLAG_EXTERNAL_6G)) {
+    return false;
+  }
+
+  node_table[slot].flags |= NODE_FLAG_EXTERNAL_6G;
+  node_table[slot].flags &= ~NODE_FLAG_ADMIN_DIRTY;
+  Serial.printf("CORE: %s registered as external 6 GHz scan-only node\n", src_mac);
+  return true;
+}
+
 struct PendingRecordAck {
   uint8_t dest[6];
   uint32_t counter;
@@ -550,7 +568,8 @@ void WiFiOps::recalculateChannelAssignments() {
   uint8_t active_count = 0;
 
   for (uint8_t i = 0; i < MAX_NODES; i++) {
-    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
       active_slots[active_count++] = i;
     }
   }
@@ -592,6 +611,19 @@ uint8_t WiFiOps::getActiveNodeCount() {
   return count;
 }
 
+uint8_t WiFiOps::getAssignableNodeCount() {
+  uint8_t count = 0;
+
+  for (uint8_t i = 0; i < MAX_NODES; i++) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
 bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
   uint8_t current = 0;
   const uint32_t now = millis();
@@ -603,6 +635,7 @@ bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
     status.start_channel = getNodeStartChannel(slot);
     status.end_channel = getNodeEndChannel(slot);
     status.last_seen_seconds = (now - node_table[slot].last_seen_ms) / 1000;
+    status.external_6g = node_table[slot].flags & NODE_FLAG_EXTERNAL_6G;
     return true;
   }
   return false;
@@ -610,8 +643,11 @@ bool WiFiOps::getNodeStatus(uint8_t active_index, NodeStatus& status) {
 
 void WiFiOps::markAllActiveNodesAdminDirty() {
   for (uint8_t i = 0; i < MAX_NODES; i++) {
-    if (node_table[i].flags & NODE_FLAG_ACTIVE) {
+    if ((node_table[i].flags & NODE_FLAG_ACTIVE) &&
+        !(node_table[i].flags & NODE_FLAG_EXTERNAL_6G)) {
       node_table[i].flags |= NODE_FLAG_ADMIN_DIRTY;
+    } else {
+      node_table[i].flags &= ~NODE_FLAG_ADMIN_DIRTY;
     }
   }
 }
@@ -641,17 +677,24 @@ void WiFiOps::debugPrintNodeTable() {
 
     uint32_t age = millis() - node_table[i].last_seen_ms;
 
-    Serial.printf(
-      "Slot %u | MAC:%04X | idx:%u | ch:%u-%u | ver:%u | flags:0x%02X | age:%lu ms\n",
-      i,
-      node_table[i].mac_suffix,
-      node_table[i].assigned_index,
-      start_ch,
-      end_ch,
-      node_table[i].last_admin_version_sent,
-      node_table[i].flags,
-      age
-    );
+    if (node_table[i].flags & NODE_FLAG_EXTERNAL_6G) {
+      Serial.printf(
+        "Slot %u | MAC:%04X | external 6 GHz | flags:0x%02X | age:%lu ms\n",
+        i, node_table[i].mac_suffix, node_table[i].flags, age
+      );
+    } else {
+      Serial.printf(
+        "Slot %u | MAC:%04X | idx:%u | ch:%u-%u | ver:%u | flags:0x%02X | age:%lu ms\n",
+        i,
+        node_table[i].mac_suffix,
+        node_table[i].assigned_index,
+        start_ch,
+        end_ch,
+        node_table[i].last_admin_version_sent,
+        node_table[i].flags,
+        age
+      );
+    }
   }
 
   Serial.println("======================\n");
@@ -711,14 +754,15 @@ bool WiFiOps::addPeerWithMode(const uint8_t* mac, bool encrypt, const uint8_t lm
 bool WiFiOps::sendAdminToNodeSlot(uint8_t slot, const uint8_t* dest_mac) {
   extern WiFiOps wifi_ops;
 
-  if (!(node_table[slot].flags & NODE_FLAG_ACTIVE)) return false;
+  if (!(node_table[slot].flags & NODE_FLAG_ACTIVE) ||
+      (node_table[slot].flags & NODE_FLAG_EXTERNAL_6G)) return false;
 
   enow_admin_msg_t msg = {};
   memcpy(msg.magic, MAGIC, 4);
   msg.type = MSG_ADMIN;
   msg.assignment_version = wifi_ops.current_assignment_version;
   msg.node_index = node_table[slot].assigned_index;
-  msg.node_count = wifi_ops.getActiveNodeCount();
+  msg.node_count = wifi_ops.getAssignableNodeCount();
   msg.start_channel_idx = node_table[slot].start_channel_idx;
   msg.end_channel_idx = node_table[slot].end_channel_idx;
 
@@ -1072,8 +1116,12 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
 
       Serial.printf("CORE: RX CORE_REQUEST from %s | RSSI %d dBm\n", srcMacStr, rssi);
 
-      // Track node regardless of encryption success
+      // Track node regardless of encryption success. Capability classification
+      // happens before allocation so external 6 GHz nodes never consume a
+      // 2.4/5 GHz channel range.
       slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+      const bool capabilitiesChanged =
+        registerExternal6GCapabilities(slot, msg, srcMacStr);
 
       // Plaintext reply so node can learn CORE MAC
       wifi_ops.sendCoreReply(info->src_addr);
@@ -1090,7 +1138,7 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
         }
       }
 
-      if (slot >= 0 && isNewNode) {
+      if (slot >= 0 && (isNewNode || capabilitiesChanged)) {
         wifi_ops.handleNodeTopologyChange();
       }
 
@@ -1115,8 +1163,10 @@ void WiFiOps::OnDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, i
                     srcMacStr, rssi, (unsigned long)msg->counter);
 
       slot = wifi_ops.touchNode(info->src_addr, isNewNode);
+      const bool capabilitiesChanged =
+        registerExternal6GCapabilities(slot, msg, srcMacStr);
 
-      if (slot >= 0 && isNewNode) {
+      if (slot >= 0 && (isNewNode || capabilitiesChanged)) {
         wifi_ops.handleNodeTopologyChange();
       }
 

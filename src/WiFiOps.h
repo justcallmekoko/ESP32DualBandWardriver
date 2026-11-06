@@ -60,6 +60,9 @@ struct GeofenceEntry {
 #define NODE_FLAG_ACTIVE       0x01
 #define NODE_FLAG_ENCRYPTED    0x02
 #define NODE_FLAG_ADMIN_DIRTY  0x04
+#define NODE_FLAG_EXTERNAL_6G  0x08
+
+#define NODE_CAPABILITY_EXTERNAL_6G "C5P1;ROLE=EXTERNAL;BANDS=6"
 
 typedef struct __attribute__((packed)) {
   char     magic[4];               // "ENOW"
@@ -103,6 +106,7 @@ struct NodeStatus {
   uint8_t start_channel;
   uint8_t end_channel;
   uint32_t last_seen_seconds;
+  bool external_6g;
 };
 
 class WiFiOps
@@ -161,6 +165,7 @@ class WiFiOps
     uint8_t getNodeStartChannel(uint8_t slot);
     uint8_t getNodeEndChannel(uint8_t slot);
     uint8_t getActiveNodeCount();
+    uint8_t getAssignableNodeCount();
     void showCountdown();
     int runWardrive(uint32_t currentTime);
     void scanBLE();
