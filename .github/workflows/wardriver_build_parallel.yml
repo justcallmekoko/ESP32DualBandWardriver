@@ -26,6 +26,10 @@ jobs:
         run: python3 tools/test_ble_lifecycle.py
       - name: Test Node Wi-Fi counter contract
         run: python3 tools/test_node_wifi_counters.py
+      - name: Test Pager integration contract
+        run: |
+          python3 tools/test_pager_integration.py
+          python3 tools/test_pager_allocation.py
       - name: Test release workflow contract
         run: python3 tools/test_release_workflow.py
 
